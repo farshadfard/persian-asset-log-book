@@ -170,6 +170,54 @@ svg {
   box-shadow: 0 -14px 24px rgba(15, 33, 29, 0.08);
 }
 
+.onboarding-dialog {
+  left: 50%;
+  top: 50%;
+  width: min(27rem, calc(100vw - 1.5rem));
+  max-height: calc(100dvh - 2rem);
+  border: 1px solid var(--border);
+  transform: translate(-50%, -50%);
+}
+
+.onboarding-image-wrap {
+  height: min(56dvh, 31rem);
+  min-height: 22rem;
+  padding: 0.75rem 0.75rem 0;
+}
+
+.onboarding-image {
+  width: 100%;
+  height: 100%;
+  border-radius: 0.9rem;
+  background-image: url("/onboarding-sprite.png");
+  background-repeat: no-repeat;
+  background-size: 100% 300%;
+}
+
+.onboarding-copy {
+  padding: 1rem 1.25rem 0;
+  text-align: center;
+}
+
+.onboarding-footer {
+  background: var(--surface);
+}
+
+.onboarding-dot {
+  width: 0.42rem;
+  height: 0.42rem;
+  border-radius: 999px;
+  background: var(--muted);
+  transition:
+    background-color 180ms ease,
+    width 180ms ease;
+}
+
+.onboarding-dot.is-active {
+  width: 1.15rem;
+  background: var(--primary);
+}
+
 .oneui-tabbar {
   pointer-events: none;
 }

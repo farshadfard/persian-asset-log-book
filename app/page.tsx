@@ -213,6 +213,24 @@ const categoryIcons: Record<AssetCategory, ReturnType<typeof makeIcon>> = {
   crypto: IconWallet,
 };
 
+const onboardingItems: Array<{ description: string; imagePosition: string; title: string }> = [
+  {
+    description: "ثبت و پیگیری دارایی‌ها همیشه بدون پرداخت و اشتراک می‌ماند.",
+    imagePosition: "center top",
+    title: "همیشه رایگان",
+  },
+  {
+    description: "داده‌های مالی شما فقط روی همین مرورگر ذخیره می‌شود.",
+    imagePosition: "center center",
+    title: "حریم خصوصی داده‌ها",
+  },
+  {
+    description: "دارایی را سریع ثبت کنید و سود امروز را بی‌دردسر ببینید.",
+    imagePosition: "center bottom",
+    title: "استفاده آسان",
+  },
+];
+
 function makeId(prefix: string) {
   return `${prefix}_${crypto.randomUUID()}`;
 }
@@ -549,6 +567,7 @@ export default function Home() {
   const [isRefreshing, setIsRefreshing] = useState(false);
   const [isAutoRefreshing, setIsAutoRefreshing] = useState(false);
   const [priceTab, setPriceTab] = useState<PriceTab>("online");
+  const [onboardingStep, setOnboardingStep] = useState(0);
   const fileInputRef = useRef<HTMLInputElement | null>(null);
   const autoRefreshStartedRef = useRef(false);
 
@@ -582,6 +601,7 @@ export default function Home() {
   const filteredEditInstruments = instruments.filter((instrument) => instrument.category === editCategory);
   const themePreference = getThemePreference(snapshot.settings.theme);
   const autoUpdatePrices = getBooleanSetting(snapshot.settings.autoUpdatePrices);
+  const onboardingSeen = getBooleanSetting(snapshot.settings.onboardingSeen);
   const latestOnlineUpdate = [...snapshot.priceCache].sort((a, b) => b.fetchedAt.localeCompare(a.fetchedAt))[0]?.fetchedAt;
   const editingAsset = snapshot.assets.find((asset) => asset.id === editingAssetId);
   const editingTransaction = snapshot.transactions
@@ -637,6 +657,17 @@ export default function Home() {
         autoUpdatePrices: enabled,
       },
     }));
+  }
+
+  function completeOnboarding() {
+    setSnapshot((current) => ({
+      ...current,
+      settings: {
+        ...current.settings,
+        onboardingSeen: true,
+      },
+    }));
+    setOnboardingStep(0);
   }
 
   function openEditAsset(assetId: string) {
@@ -1245,6 +1276,51 @@ export default function Home() {
             </div>
           </div>
         )}
+
+        <Dialog.Root
+          open={loaded && !onboardingSeen}
+          onOpenChange={(open) => {
+            if (!open) completeOnboarding();
+          }}
+        >
+          <Dialog.Portal>
+            <Dialog.Overlay className="fixed inset-0 z-50 bg-black/45" />
+            <Dialog.Content className="onboarding-dialog fixed z-50 overflow-hidden rounded-lg bg-[var(--surface)] shadow-2xl">
+              <div className="onboarding-image-wrap">
+                <div
+                  aria-hidden="true"
+                  className="onboarding-image"
+                  style={{ backgroundPosition: onboardingItems[onboardingStep].imagePosition }}
+                />
+              </div>
+              <div className="onboarding-copy">
+                <Dialog.Title className="text-2xl font-black">{onboardingItems[onboardingStep].title}</Dialog.Title>
+                <Dialog.Description className="mt-2 text-sm leading-7 text-[var(--muted-foreground)]">
+                  {onboardingItems[onboardingStep].description}
+                </Dialog.Description>
+              </div>
+              <div className="onboarding-footer p-4">
+                <div className="flex items-center justify-center gap-1.5" aria-hidden="true">
+                  {onboardingItems.map((item, index) => (
+                    <span className={cn("onboarding-dot", index === onboardingStep && "is-active")} key={item.title} />
+                  ))}
+                </div>
+                <Button
+                  className="mt-4 w-full"
+                  onClick={() => {
+                    if (onboardingStep < onboardingItems.length - 1) {
+                      setOnboardingStep((current) => current + 1);
+                    } else {
+                      completeOnboarding();
+                    }
+                  }}
+                >
+                  {onboardingStep < onboardingItems.length - 1 ? "بعدی" : "شروع استفاده"}
+                </Button>
+              </div>
+            </Dialog.Content>
+          </Dialog.Portal>
+        </Dialog.Root>
 
         <div className="mx-auto grid max-w-3xl gap-4 px-4 py-4">{mainContent}</div>
 
