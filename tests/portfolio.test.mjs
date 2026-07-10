@@ -122,6 +122,11 @@ test("imports legacy backups into daily prices and exports v2 history", () => {
   assert.equal("priceCache" in exported, false);
 });
 
+test("rejects non-application backup files", () => {
+  assert.throws(() => parseImportedSnapshot("{}"), /Invalid backup file/);
+  assert.throws(() => parseImportedSnapshot(JSON.stringify({ assets: [] })), /Invalid backup file/);
+});
+
 test("parses Persian decimal and thousands separators", () => {
   assert.equal(parseLocalizedNumber("۱۴۷٫۸"), 147.8);
   assert.equal(parseLocalizedNumber("۱٬۰۰۰٬۰۰۰٫۵"), 1_000_000.5);

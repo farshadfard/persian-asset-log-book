@@ -30,6 +30,12 @@ type LegacyPriceRecord = {
   note?: string;
 };
 
+export type ImportedBackup = {
+  exportedAt?: string;
+  snapshot: PortfolioSnapshot;
+  version?: number;
+};
+
 function requestToPromise<T>(request: IDBRequest<T>): Promise<T> {
   return new Promise((resolve, reject) => {
     request.onsuccess = () => resolve(request.result);
@@ -85,6 +91,83 @@ function legacyToDaily(records: LegacyPriceRecord[]): DailyPriceRecord[] {
     if (!previous || record.status === "manual" || record.fetchedAt > previous.fetchedAt) mapped.set(key, record);
   }
   return pruneDateWindow([...mapped.values()]);
+}
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return Boolean(value) && typeof value === "object" && !Array.isArray(value);
+}
+
+function isAssetCategory(value: unknown): value is AssetCategory {
+  return value === "gold" || value === "silver" || value === "coin" || value === "currency" || value === "crypto";
+}
+
+function isAssetRecord(value: unknown): value is AssetRecord {
+  return (
+    isRecord(value) &&
+    typeof value.id === "string" &&
+    isAssetCategory(value.category) &&
+    typeof value.instrumentId === "string" &&
+    typeof value.name === "string" &&
+    typeof value.unit === "string" &&
+    typeof value.createdAt === "string"
+  );
+}
+
+function isTransactionRecord(value: unknown): value is TransactionRecord {
+  return (
+    isRecord(value) &&
+    typeof value.id === "string" &&
+    typeof value.assetId === "string" &&
+    (value.type === "buy" || value.type === "sell") &&
+    typeof value.quantity === "number" &&
+    Number.isFinite(value.quantity) &&
+    typeof value.unitPrice === "number" &&
+    Number.isFinite(value.unitPrice) &&
+    typeof value.fee === "number" &&
+    Number.isFinite(value.fee) &&
+    typeof value.date === "string" &&
+    (value.dateKey === undefined || typeof value.dateKey === "string") &&
+    (value.note === undefined || typeof value.note === "string")
+  );
+}
+
+function isDailyPriceRecord(value: unknown): value is DailyPriceRecord {
+  return (
+    isRecord(value) &&
+    typeof value.instrumentId === "string" &&
+    typeof value.name === "string" &&
+    isAssetCategory(value.category) &&
+    typeof value.date === "string" &&
+    (value.status === "quoted" || value.status === "no_quote" || value.status === "manual" || value.status === "edited") &&
+    (value.priceToman === undefined || (typeof value.priceToman === "number" && Number.isFinite(value.priceToman))) &&
+    typeof value.fetchedAt === "string" &&
+    (value.sourceUrl === undefined || typeof value.sourceUrl === "string") &&
+    (value.rawValue === undefined || typeof value.rawValue === "string") &&
+    (value.originalPriceToman === undefined || (typeof value.originalPriceToman === "number" && Number.isFinite(value.originalPriceToman))) &&
+    (value.editedAt === undefined || typeof value.editedAt === "string") &&
+    (value.note === undefined || typeof value.note === "string")
+  );
+}
+
+function isLegacyPriceRecord(value: unknown): value is LegacyPriceRecord {
+  return (
+    isRecord(value) &&
+    typeof value.instrumentId === "string" &&
+    typeof value.name === "string" &&
+    isAssetCategory(value.category) &&
+    typeof value.priceToman === "number" &&
+    Number.isFinite(value.priceToman) &&
+    (value.source === "tgju" || value.source === "manual" || value.source === "cache") &&
+    typeof value.fetchedAt === "string" &&
+    (value.sourceUrl === undefined || typeof value.sourceUrl === "string") &&
+    (value.rawValue === undefined || typeof value.rawValue === "string") &&
+    (value.note === undefined || typeof value.note === "string")
+  );
+}
+
+function requireRecordArray<T>(value: unknown, validator: (item: unknown) => item is T, name: string): T[] {
+  if (!Array.isArray(value) || !value.every(validator)) throw new Error(`Invalid backup ${name}`);
+  return value;
 }
 
 export async function loadSnapshot(): Promise<PortfolioSnapshot> {
@@ -155,23 +238,39 @@ export function exportSnapshot(snapshot: PortfolioSnapshot): string {
   );
 }
 
-export function parseImportedSnapshot(input: string): PortfolioSnapshot {
-  const parsed = JSON.parse(input) as Partial<PortfolioSnapshot> & {
-    version?: number;
-    priceCache?: LegacyPriceRecord[];
-    manualPrices?: LegacyPriceRecord[];
-  };
-  const dailyPrices = Array.isArray(parsed.dailyPrices)
-    ? parsed.dailyPrices
+export function parseImportedBackup(input: string): ImportedBackup {
+  const parsed = JSON.parse(input) as unknown;
+  if (!isRecord(parsed)) throw new Error("Invalid backup file");
+
+  const version = typeof parsed.version === "number" ? parsed.version : undefined;
+  const exportedAt = typeof parsed.exportedAt === "string" ? parsed.exportedAt : undefined;
+  const hasCurrentMarker = version !== undefined && exportedAt !== undefined;
+  const hasLegacyMarker = Array.isArray(parsed.priceCache) || Array.isArray(parsed.manualPrices);
+  if (!hasCurrentMarker && !hasLegacyMarker) throw new Error("Invalid backup file");
+
+  const assets = requireRecordArray(parsed.assets, isAssetRecord, "assets");
+  const transactions = requireRecordArray(parsed.transactions, isTransactionRecord, "transactions");
+  const settings = isRecord(parsed.settings) ? parsed.settings : {};
+  const dailyPrices = hasCurrentMarker
+    ? requireRecordArray(parsed.dailyPrices, isDailyPriceRecord, "dailyPrices")
     : legacyToDaily([
-        ...(Array.isArray(parsed.priceCache) ? parsed.priceCache : []),
-        ...(Array.isArray(parsed.manualPrices) ? parsed.manualPrices : []),
+        ...requireRecordArray(parsed.priceCache ?? [], isLegacyPriceRecord, "priceCache"),
+        ...requireRecordArray(parsed.manualPrices ?? [], isLegacyPriceRecord, "manualPrices"),
       ]);
+
   return {
-    ...emptySnapshot(),
-    assets: Array.isArray(parsed.assets) ? parsed.assets : [],
-    transactions: Array.isArray(parsed.transactions) ? parsed.transactions : [],
-    dailyPrices: pruneDateWindow(dailyPrices),
-    settings: parsed.settings && typeof parsed.settings === "object" ? parsed.settings : {},
+    exportedAt,
+    snapshot: {
+      ...emptySnapshot(),
+      assets,
+      transactions,
+      dailyPrices: pruneDateWindow(dailyPrices),
+      settings,
+    },
+    version,
   };
+}
+
+export function parseImportedSnapshot(input: string): PortfolioSnapshot {
+  return parseImportedBackup(input).snapshot;
 }

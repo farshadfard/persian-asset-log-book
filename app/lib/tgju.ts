@@ -135,7 +135,7 @@ async function fetchWithTimeout(fetcher: typeof fetch, url: string, accept: stri
     return await fetcher(url, {
       headers: {
         accept,
-        "user-agent": "Mozilla/5.0 persian-asset-log-book price fetcher",
+        "user-agent": "Mozilla/5.0 sarmaye-man price fetcher",
       },
       signal: controller.signal,
     });

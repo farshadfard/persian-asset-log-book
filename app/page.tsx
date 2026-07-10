@@ -37,7 +37,8 @@ import {
   type TransactionRecord,
   type TransactionType,
 } from "./lib/portfolio";
-import { exportSnapshot, loadSnapshot, parseImportedSnapshot, saveSnapshot } from "./lib/storage";
+import { exportSnapshot, loadSnapshot, parseImportedBackup, saveSnapshot } from "./lib/storage";
+import type { ImportedBackup } from "./lib/storage";
 import type { PriceSyncResponse } from "./lib/tgju";
 
 const categoryLabels: Record<AssetCategory, string> = {
@@ -52,6 +53,7 @@ type View = "dashboard" | "assets" | "add" | "prices" | "settings" | "assetHisto
 type ThemePreference = "auto" | "light" | "dark";
 type HistoryRange = 7 | 30 | 90 | "custom";
 type PriceEditorState = { date: string; instrumentId: string };
+type BackupConfirmationState = ImportedBackup & { fileName: string };
 type InstallPlatform = "android" | "ios-safari" | "ios-other" | "desktop" | "other";
 type BeforeInstallPromptEvent = Event & {
   prompt: () => Promise<void>;
@@ -61,7 +63,7 @@ const NEW_ASSET_VALUE = "__new_asset__";
 const APP_NAME = "سرمایه من";
 const APP_NAME_QUOTED = `«${APP_NAME}»`;
 const APP_VERSION = "0.1.0";
-const GITHUB_REPO_URL = "https://github.com/farshadfard/persian-asset-log-book";
+const GITHUB_REPO_URL = "https://github.com/farshadfard/sarmaye-man";
 const SUPPORT_EMAIL = "info@fdanaeefard.com";
 const themeOptions: Array<{ label: string; value: ThemePreference }> = [
   { label: "خودکار", value: "auto" },
@@ -86,7 +88,9 @@ type IconName =
   | "download"
   | "edit"
   | "gem"
+  | "github"
   | "home"
+  | "mail"
   | "plus"
   | "refresh"
   | "settings"
@@ -165,11 +169,23 @@ function Icon({ className, name, size = 18 }: IconProps) {
         <path {...common} d="M2 10h20M8 4l-2 6 6 10 6-10-2-6" />
       </>
     ),
+    github: (
+      <>
+        <path {...common} d="M15 22v-4a4.8 4.8 0 0 0-1-3.5c3.2-.4 6.5-1.6 6.5-7A5.4 5.4 0 0 0 19 3.8 5 5 0 0 0 18.9.2S17.7-.2 15 1.7a13.4 13.4 0 0 0-7 0C5.3-.2 4.1.2 4.1.2A5 5 0 0 0 4 3.8a5.4 5.4 0 0 0-1.5 3.7c0 5.4 3.3 6.6 6.5 7A4.8 4.8 0 0 0 8 18v4" />
+        <path {...common} d="M8 19c-3 .9-5-1-6-3" />
+      </>
+    ),
     home: (
       <>
         <path {...common} d="M3 11 12 4l9 7" />
         <path {...common} d="M6 10v10h12V10" />
         <path {...common} d="M10 20v-6h4v6" />
+      </>
+    ),
+    mail: (
+      <>
+        <rect {...common} x="3" y="5" width="18" height="14" rx="2" />
+        <path {...common} d="m3 7 9 6 9-6" />
       </>
     ),
     plus: <path {...common} d="M12 5v14M5 12h14" />,
@@ -248,7 +264,9 @@ const IconCoins = makeIcon("coins");
 const IconDownload = makeIcon("download");
 const IconEdit = makeIcon("edit");
 const IconGem = makeIcon("gem");
+const IconGithub = makeIcon("github");
 const IconHome = makeIcon("home");
+const IconMail = makeIcon("mail");
 const IconPlus = makeIcon("plus");
 const IconRefresh = makeIcon("refresh");
 const IconSettings = makeIcon("settings");
@@ -411,6 +429,12 @@ function faDate(value?: string) {
 function faDateTime(value?: string) {
   if (!value) return "نامشخص";
   return new Intl.DateTimeFormat("fa-IR-u-ca-persian", { dateStyle: "medium", timeStyle: "short" }).format(new Date(value));
+}
+
+function safeFaDateTime(value?: string) {
+  if (!value) return "نامشخص";
+  const date = new Date(value);
+  return Number.isNaN(date.getTime()) ? "نامشخص" : faDateTime(value);
 }
 
 function faEditedDateTime(value?: string) {
@@ -724,6 +748,7 @@ export default function Home() {
   const [customHistoryTo, setCustomHistoryTo] = useState(todayIso());
   const [historyChartMode, setHistoryChartMode] = useState<HistoryChartMode>("totalProfit");
   const [pendingDeleteAssetId, setPendingDeleteAssetId] = useState("");
+  const [pendingBackup, setPendingBackup] = useState<BackupConfirmationState | null>(null);
   const [editingAssetId, setEditingAssetId] = useState("");
   const [editCategory, setEditCategory] = useState<AssetCategory>("gold");
   const [editInstrumentId, setEditInstrumentId] = useState("gold_melted_18");
@@ -1254,11 +1279,18 @@ export default function Home() {
   async function importBackup(file: File) {
     try {
       const text = await file.text();
-      setSnapshot(parseImportedSnapshot(text));
-      showToast("بکاپ وارد شد.");
+      const backup = parseImportedBackup(text);
+      setPendingBackup({ ...backup, fileName: file.name });
     } catch {
-      showToast("فایل بکاپ خوانده نشد.");
+      showToast("فایل انتخاب‌شده پشتیبان معتبر برنامه نیست.");
     }
+  }
+
+  function confirmImportBackup() {
+    if (!pendingBackup) return;
+    setSnapshot(pendingBackup.snapshot);
+    setPendingBackup(null);
+    showToast("اطلاعات از پشتیبان بازگردانی شد.");
   }
 
   const mainContent = (
@@ -1769,7 +1801,7 @@ export default function Home() {
                   variant="secondary"
                   onClick={() => window.open(GITHUB_REPO_URL, "_blank", "noopener,noreferrer")}
                 >
-                  <IconUpload size={18} />
+                  <IconGithub size={18} />
                   مخزن GitHub
                 </Button>
                 <Button
@@ -1779,7 +1811,7 @@ export default function Home() {
                     window.location.href = `mailto:${SUPPORT_EMAIL}`;
                   }}
                 >
-                  <IconDownload size={18} />
+                  <IconMail size={18} />
                   ایمیل پشتیبانی
                 </Button>
               </div>
@@ -1833,6 +1865,45 @@ export default function Home() {
         </Dialog.Root>
 
         <div className={cn("app-content", (activeView === "dashboard" || activeView === "assets" || activeView === "add" || activeView === "prices") && "is-locked")}>{mainContent}</div>
+
+        <Dialog.Root open={Boolean(pendingBackup)} onOpenChange={(open) => !open && setPendingBackup(null)}>
+          <Dialog.Portal>
+            <Dialog.Overlay className="fixed inset-0 z-40 bg-black/45" />
+            <Dialog.Content className="price-dialog fixed z-50 overflow-hidden rounded-lg border border-[var(--border)] bg-[var(--surface)] p-4 shadow-2xl">
+              <div className="flex items-start justify-between gap-3">
+                <div className="min-w-0">
+                  <Dialog.Title className="text-lg font-extrabold">بازگردانی اطلاعات</Dialog.Title>
+                  <Dialog.Description className="mt-2 text-sm leading-7 text-[var(--muted-foreground)]">
+                    فایل «{pendingBackup?.fileName}» آماده بازگردانی است.
+                  </Dialog.Description>
+                </div>
+                <Dialog.Close className="rounded-md p-1 hover:bg-[var(--muted)]">
+                  <IconX size={18} />
+                </Dialog.Close>
+              </div>
+              <div className="mt-4 grid gap-2 rounded-lg border border-[var(--border)] bg-[var(--background)] p-3 text-sm">
+                <Metric label="تاریخ پشتیبان" value={safeFaDateTime(pendingBackup?.exportedAt)} />
+                <Metric label="نسخه فایل" value={pendingBackup?.version ? formatNumber(pendingBackup.version, 0) : "قدیمی"} />
+                <Metric label="دارایی‌ها" value={formatNumber(pendingBackup?.snapshot.assets.length ?? 0, 0)} />
+                <Metric label="تراکنش‌ها" value={formatNumber(pendingBackup?.snapshot.transactions.length ?? 0, 0)} />
+                <Metric label="قیمت‌های روزانه" value={formatNumber(pendingBackup?.snapshot.dailyPrices.length ?? 0, 0)} />
+              </div>
+              <div className="mt-4 rounded-lg border border-red-200 bg-red-50 p-3 text-sm leading-6 text-red-800 dark:border-red-900/60 dark:bg-red-950/30 dark:text-red-200">
+                با ادامه، همه اطلاعات فعلی برنامه حذف و با محتوای این پشتیبان جایگزین می‌شود. قبل از ادامه مطمئن شوید از اطلاعات فعلی پشتیبان دارید.
+              </div>
+              <div className="mt-4 grid grid-cols-2 gap-2 border-t border-[var(--border)] pt-3">
+                <Button type="button" onClick={confirmImportBackup}>
+                  بازگردانی
+                </Button>
+                <Dialog.Close asChild>
+                  <Button type="button" variant="secondary">
+                    انصراف
+                  </Button>
+                </Dialog.Close>
+              </div>
+            </Dialog.Content>
+          </Dialog.Portal>
+        </Dialog.Root>
 
         <Dialog.Root open={Boolean(pendingDeleteAssetId)} onOpenChange={(open) => !open && setPendingDeleteAssetId("")}>
           <Dialog.Portal>
