@@ -1239,102 +1239,106 @@ export default function Home() {
       )}
 
       {activeView === "add" && (
-        <form className="grid gap-4" onSubmit={addEntry}>
-          <PageTitle title="ثبت دارایی" subtitle="خرید سریع، موجودی فعلی یا تراکنش دقیق" />
-          <Tabs.Root value={entryMode} onValueChange={(value) => setEntryMode(value as "quick" | "transaction")} dir="rtl">
-            <Tabs.List className="grid grid-cols-2 rounded-lg bg-[var(--muted)] p-1">
-              <Tabs.Trigger className="rounded-md px-3 py-2 text-sm font-bold data-[state=active]:bg-[var(--surface)] data-[state=active]:shadow-sm" value="quick">
-                موجودی فعلی
-              </Tabs.Trigger>
-              <Tabs.Trigger className="rounded-md px-3 py-2 text-sm font-bold data-[state=active]:bg-[var(--surface)] data-[state=active]:shadow-sm" value="transaction">
-                خرید/فروش
-              </Tabs.Trigger>
-            </Tabs.List>
-          </Tabs.Root>
+        <form className="locked-view" onSubmit={addEntry}>
+          <div className="locked-view-fixed">
+            <PageTitle title="ثبت دارایی" subtitle="خرید سریع، موجودی فعلی یا تراکنش دقیق" />
+            <Tabs.Root value={entryMode} onValueChange={(value) => setEntryMode(value as "quick" | "transaction")} dir="rtl">
+              <Tabs.List className="grid grid-cols-2 rounded-lg bg-[var(--muted)] p-1">
+                <Tabs.Trigger className="rounded-md px-3 py-2 text-sm font-bold data-[state=active]:bg-[var(--surface)] data-[state=active]:shadow-sm" value="quick">
+                  موجودی فعلی
+                </Tabs.Trigger>
+                <Tabs.Trigger className="rounded-md px-3 py-2 text-sm font-bold data-[state=active]:bg-[var(--surface)] data-[state=active]:shadow-sm" value="transaction">
+                  خرید/فروش
+                </Tabs.Trigger>
+              </Tabs.List>
+            </Tabs.Root>
+          </div>
 
-          <Card className="grid gap-4">
-            <Field label="نوع دارایی">
-              <div className="grid grid-cols-2 gap-2 min-[430px]:grid-cols-3 sm:grid-cols-5">
-                {(Object.keys(categoryLabels) as AssetCategory[]).map((item) => {
-                  const Icon = categoryIcons[item];
-                  return (
-                    <button
-                      key={item}
-                      type="button"
-                      className={cn("grid min-h-16 place-items-center gap-1 rounded-lg border px-2 py-2 text-center text-xs font-bold leading-tight", category === item ? "border-[var(--primary)] bg-[var(--primary-soft)] text-[var(--primary)]" : "border-[var(--border)] bg-[var(--surface)]")}
-                      onClick={() => {
-                        setCategory(item);
-                        setInstrumentId(instruments.find((instrument) => instrument.category === item)?.id ?? instrumentId);
-                        setExistingAssetId("");
-                      }}
-                    >
-                      <Icon size={18} />
-                      <span>{categoryLabels[item]}</span>
-                    </button>
-                  );
-                })}
-              </div>
-            </Field>
-
-            {entryMode === "transaction" && snapshot.assets.length > 0 && (
-              <Field label="ثبت روی دارایی موجود">
-                <SelectBox
-                  value={existingAssetId || NEW_ASSET_VALUE}
-                  onValueChange={(value) => setExistingAssetId(value === NEW_ASSET_VALUE ? "" : value)}
-                  placeholder="دارایی جدید"
-                  items={[{ value: NEW_ASSET_VALUE, label: "دارایی جدید" }, ...snapshot.assets.map((asset) => ({ value: asset.id, label: asset.name }))]}
-                />
-              </Field>
-            )}
-
-            {!existingAssetId && (
-              <>
-                <Field label="نماد/بازار">
-                  <SelectBox value={instrumentId} onValueChange={setInstrumentId} items={filteredInstruments.map((item) => ({ value: item.id, label: item.name }))} />
-                </Field>
-                <Field label="نام دلخواه">
-                  <TextInput value={customName} onChange={(event) => setCustomName(event.target.value)} placeholder="مثلاً آب‌شده صندوق شخصی" />
-                </Field>
-              </>
-            )}
-
-            {entryMode === "transaction" && (
-              <Field label="نوع تراکنش">
-                <div className="grid grid-cols-2 rounded-lg bg-[var(--muted)] p-1">
-                  <button type="button" className={cn("rounded-md py-2 text-sm font-bold", transactionType === "buy" && "bg-[var(--surface)] shadow-sm")} onClick={() => setTransactionType("buy")}>
-                    خرید
-                  </button>
-                  <button type="button" className={cn("rounded-md py-2 text-sm font-bold", transactionType === "sell" && "bg-[var(--surface)] shadow-sm")} onClick={() => setTransactionType("sell")}>
-                    فروش
-                  </button>
+          <div className="locked-view-list">
+            <Card className="grid gap-4">
+              <Field label="نوع دارایی">
+                <div className="grid grid-cols-2 gap-2 min-[430px]:grid-cols-3 sm:grid-cols-5">
+                  {(Object.keys(categoryLabels) as AssetCategory[]).map((item) => {
+                    const Icon = categoryIcons[item];
+                    return (
+                      <button
+                        key={item}
+                        type="button"
+                        className={cn("grid min-h-16 place-items-center gap-1 rounded-lg border px-2 py-2 text-center text-xs font-bold leading-tight", category === item ? "border-[var(--primary)] bg-[var(--primary-soft)] text-[var(--primary)]" : "border-[var(--border)] bg-[var(--surface)]")}
+                        onClick={() => {
+                          setCategory(item);
+                          setInstrumentId(instruments.find((instrument) => instrument.category === item)?.id ?? instrumentId);
+                          setExistingAssetId("");
+                        }}
+                      >
+                        <Icon size={18} />
+                        <span>{categoryLabels[item]}</span>
+                      </button>
+                    );
+                  })}
                 </div>
               </Field>
-            )}
 
-            <div className="grid grid-cols-1 gap-3 min-[430px]:grid-cols-2">
-              <Field label="مقدار">
-                <TextInput inputMode="decimal" value={quantity} onChange={(event) => setQuantity(formatDecimalInput(event.target.value))} placeholder="۱۴۷٫۸" />
+              {entryMode === "transaction" && snapshot.assets.length > 0 && (
+                <Field label="ثبت روی دارایی موجود">
+                  <SelectBox
+                    value={existingAssetId || NEW_ASSET_VALUE}
+                    onValueChange={(value) => setExistingAssetId(value === NEW_ASSET_VALUE ? "" : value)}
+                    placeholder="دارایی جدید"
+                    items={[{ value: NEW_ASSET_VALUE, label: "دارایی جدید" }, ...snapshot.assets.map((asset) => ({ value: asset.id, label: asset.name }))]}
+                  />
+                </Field>
+              )}
+
+              {!existingAssetId && (
+                <>
+                  <Field label="نماد/بازار">
+                    <SelectBox value={instrumentId} onValueChange={setInstrumentId} items={filteredInstruments.map((item) => ({ value: item.id, label: item.name }))} />
+                  </Field>
+                  <Field label="نام دلخواه">
+                    <TextInput value={customName} onChange={(event) => setCustomName(event.target.value)} placeholder="مثلاً آب‌شده صندوق شخصی" />
+                  </Field>
+                </>
+              )}
+
+              {entryMode === "transaction" && (
+                <Field label="نوع تراکنش">
+                  <div className="grid grid-cols-2 rounded-lg bg-[var(--muted)] p-1">
+                    <button type="button" className={cn("rounded-md py-2 text-sm font-bold", transactionType === "buy" && "bg-[var(--surface)] shadow-sm")} onClick={() => setTransactionType("buy")}>
+                      خرید
+                    </button>
+                    <button type="button" className={cn("rounded-md py-2 text-sm font-bold", transactionType === "sell" && "bg-[var(--surface)] shadow-sm")} onClick={() => setTransactionType("sell")}>
+                      فروش
+                    </button>
+                  </div>
+                </Field>
+              )}
+
+              <div className="grid grid-cols-1 gap-3 min-[430px]:grid-cols-2">
+                <Field label="مقدار">
+                  <TextInput inputMode="decimal" value={quantity} onChange={(event) => setQuantity(formatDecimalInput(event.target.value))} placeholder="۱۴۷٫۸" />
+                </Field>
+                <Field label="قیمت واحد (تومان)">
+                  <TextInput inputMode="numeric" value={unitPrice} onChange={(event) => setUnitPrice(formatPriceInput(event.target.value))} placeholder="۶٬۷۶۲٬۲۰۰" />
+                </Field>
+              </div>
+              <div className="grid grid-cols-1 gap-3 min-[430px]:grid-cols-2">
+                <Field label="کارمزد (تومان)">
+                  <TextInput inputMode="numeric" value={fee} onChange={(event) => setFee(formatPriceInput(event.target.value))} placeholder="۰" />
+                </Field>
+                <Field label="تاریخ">
+                  <PersianDatePicker value={date} onChange={setDate} />
+                </Field>
+              </div>
+              <Field label="یادداشت">
+                <TextArea value={note} onChange={(event) => setNote(event.target.value)} placeholder="اختیاری" />
               </Field>
-              <Field label="قیمت واحد (تومان)">
-                <TextInput inputMode="numeric" value={unitPrice} onChange={(event) => setUnitPrice(formatPriceInput(event.target.value))} placeholder="۶٬۷۶۲٬۲۰۰" />
-              </Field>
-            </div>
-            <div className="grid grid-cols-1 gap-3 min-[430px]:grid-cols-2">
-              <Field label="کارمزد (تومان)">
-                <TextInput inputMode="numeric" value={fee} onChange={(event) => setFee(formatPriceInput(event.target.value))} placeholder="۰" />
-              </Field>
-              <Field label="تاریخ">
-                <PersianDatePicker value={date} onChange={setDate} />
-              </Field>
-            </div>
-            <Field label="یادداشت">
-              <TextArea value={note} onChange={(event) => setNote(event.target.value)} placeholder="اختیاری" />
-            </Field>
-          </Card>
-          <Button type="submit">
-            <IconCheck size={18} />
-            ذخیره
-          </Button>
+            </Card>
+            <Button type="submit">
+              <IconCheck size={18} />
+              ذخیره
+            </Button>
+          </div>
         </form>
       )}
 
@@ -1342,6 +1346,9 @@ export default function Home() {
         <div className="locked-view">
           <div className="locked-view-fixed">
             <PageTitle title="قیمت‌ها" subtitle="تاریخچه ۹۰ روزه قیمت‌های TGJU" />
+          </div>
+
+          <div className="locked-view-list">
             <Card className="grid gap-3">
               <div className="flex min-w-0 items-start justify-between gap-3">
                 <div className="min-w-0">
@@ -1409,9 +1416,7 @@ export default function Home() {
                 <span>فقط قیمت‌های ناقص</span>
               </label>
             </Card>
-          </div>
 
-          <div className="locked-view-list">
             {instruments
               .filter((instrument) => priceInstrumentFilter === "all" || instrument.id === priceInstrumentFilter)
               .filter((instrument) => {
@@ -1592,7 +1597,7 @@ export default function Home() {
           </Dialog.Portal>
         </Dialog.Root>
 
-        <div className={cn("app-content", (activeView === "dashboard" || activeView === "assets" || activeView === "prices") && "is-locked")}>{mainContent}</div>
+        <div className={cn("app-content", (activeView === "dashboard" || activeView === "assets" || activeView === "add" || activeView === "prices") && "is-locked")}>{mainContent}</div>
 
         <Dialog.Root open={Boolean(pendingDeleteAssetId)} onOpenChange={(open) => !open && setPendingDeleteAssetId("")}>
           <Dialog.Portal>
