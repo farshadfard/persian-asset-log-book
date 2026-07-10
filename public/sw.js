@@ -1,5 +1,15 @@
-const CACHE_NAME = "asset-log-shell-v1";
-const APP_SHELL = ["/", "/manifest.webmanifest", "/favicon.svg", "/icon.svg"];
+const CACHE_NAME = "asset-log-shell-v2";
+const APP_SHELL = [
+  "/",
+  "/manifest.webmanifest",
+  "/favicon.svg",
+  "/icon.svg",
+  "/fonts/estedad-arabic.woff2",
+  "/fonts/estedad-latin.woff2",
+  "/onboarding-free.webp",
+  "/onboarding-privacy.webp",
+  "/onboarding-easy.webp",
+];
 
 self.addEventListener("install", (event) => {
   event.waitUntil(caches.open(CACHE_NAME).then((cache) => cache.addAll(APP_SHELL)));

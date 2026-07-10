@@ -2,8 +2,6 @@ import assert from "node:assert/strict";
 import { access, readFile, readdir } from "node:fs/promises";
 import test from "node:test";
 
-const estedadImport = /fonts\.googleapis\.com\/css2\?family=Estedad/;
-
 test("keeps the Persian app shell and metadata correct", async () => {
   const [layout, css, page, manifest, sw, packageJson, appFiles] = await Promise.all([
     readFile(new URL("../app/layout.tsx", import.meta.url), "utf8"),
@@ -18,7 +16,9 @@ test("keeps the Persian app shell and metadata correct", async () => {
   assert.match(layout, /lang="fa"/);
   assert.match(layout, /dir="rtl"/);
   assert.doesNotMatch(layout, /next\/font\/google|Geist|codex-preview/);
-  assert.match(css, estedadImport);
+  assert.match(css, /@font-face[\s\S]+\/fonts\/estedad-arabic\.woff2/);
+  assert.match(css, /@font-face[\s\S]+\/fonts\/estedad-latin\.woff2/);
+  assert.doesNotMatch(css, /fonts\.googleapis|fonts\.gstatic/);
   assert.doesNotMatch(css, /Vazirmatn|vazirmatn/);
   assert.match(css, /scrollbar-width:\s*none/);
   assert.match(css, /prefers-color-scheme:\s*dark/);
@@ -46,10 +46,15 @@ test("keeps the Persian app shell and metadata correct", async () => {
   assert.ok(!appFiles.includes("_sites-preview"), "starter preview directory should be removed");
 });
 
-test("build output uses only the requested Google Font as a remote static resource", async () => {
+test("build output has no remote static resources", async () => {
   await Promise.all([
     access(new URL("../dist/client/manifest.webmanifest", import.meta.url)),
     access(new URL("../dist/client/sw.js", import.meta.url)),
+    access(new URL("../dist/client/fonts/estedad-arabic.woff2", import.meta.url)),
+    access(new URL("../dist/client/fonts/estedad-latin.woff2", import.meta.url)),
+    access(new URL("../dist/client/onboarding-free.webp", import.meta.url)),
+    access(new URL("../dist/client/onboarding-privacy.webp", import.meta.url)),
+    access(new URL("../dist/client/onboarding-easy.webp", import.meta.url)),
   ]);
 
   const assetDir = new URL("../dist/client/assets/", import.meta.url);
@@ -64,11 +69,11 @@ test("build output uses only the requested Google Font as a remote static resour
     readFile(new URL("../dist/client/sw.js", import.meta.url), "utf8"),
   ]);
   const staticText = [...cssAssets, ...pwaAssets].join("\n");
-  assert.match(staticText, estedadImport);
-  assert.doesNotMatch(staticText, /Vazirmatn|vazirmatn|googletagmanager|cdn\./i);
+  assert.match(staticText, /\/fonts\/estedad-arabic\.woff2/);
+  assert.match(staticText, /\/fonts\/estedad-latin\.woff2/);
+  assert.match(staticText, /\/onboarding-free\.webp/);
+  assert.doesNotMatch(staticText, /Vazirmatn|vazirmatn|googletagmanager|cdn\.|fonts\.googleapis|fonts\.gstatic/i);
 
   const remoteReferences = [...staticText.matchAll(/(?:url\(|@import\s+)["']?(https?:[^"')\s;]+)/g)].map((match) => match[1]);
-  assert.deepEqual([...new Set(remoteReferences)], [
-    "https://fonts.googleapis.com/css2?family=Estedad:wght@400",
-  ]);
+  assert.deepEqual([...new Set(remoteReferences)], []);
 });

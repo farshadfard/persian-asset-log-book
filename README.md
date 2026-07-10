@@ -27,8 +27,8 @@ The only intentional network price source is TGJU, called through `/api/prices`.
 - Runtime target: Cloudflare Worker.
 - Persistence: IndexedDB stores `assets`, `transactions`, `priceCache`, `manualPrices`, and `settings`.
 - PWA: local manifest, local SVG icons, service worker, offline app shell.
-- Assets: onboarding PNGs and SVG icons are bundled locally.
-- Fonts/styles/scripts: app code and static assets are bundled locally, except the configured Estedad Google Fonts stylesheet.
+- Assets: optimized onboarding WebP images and SVG icons are bundled locally.
+- Fonts/styles/scripts: app code, Estedad font files, and static assets are bundled locally.
 - Tests: Node test runner covers portfolio calculations, TGJU parsing, rendered shell/metadata, and static resource checks.
 
 ## Requirements

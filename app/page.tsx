@@ -216,17 +216,17 @@ const categoryIcons: Record<AssetCategory, ReturnType<typeof makeIcon>> = {
 const onboardingItems: Array<{ description: string; imageSrc: string; title: string }> = [
   {
     description: "ثبت و پیگیری دارایی‌ها همیشه بدون پرداخت و اشتراک می‌ماند.",
-    imageSrc: "/onboarding-free.png",
+    imageSrc: "/onboarding-free.webp",
     title: "همیشه رایگان",
   },
   {
     description: "داده‌های مالی شما فقط روی همین دستگاه ذخیره می‌شود.",
-    imageSrc: "/onboarding-privacy.png",
+    imageSrc: "/onboarding-privacy.webp",
     title: "حریم خصوصی داده‌ها",
   },
   {
     description: "دارایی را سریع ثبت کنید و سود امروز را بی‌دردسر ببینید.",
-    imageSrc: "/onboarding-easy.png",
+    imageSrc: "/onboarding-easy.webp",
     title: "استفاده آسان",
   },
 ];
