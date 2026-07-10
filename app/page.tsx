@@ -7,23 +7,38 @@ import * as Toast from "@radix-ui/react-toast";
 import type React from "react";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { twMerge } from "tailwind-merge";
+import { AssetHistoryChart, MiniProfitChart, type HistoryChartMode } from "./components/charts";
 import {
+  addLocalDays,
+  dateFromLocalKey,
+  localDateKey,
+  localDateTimeForKey,
+  retentionStart,
+  transactionDateKey,
+} from "./lib/date";
+import {
+  buildMissingPriceRequests,
+  computeAssetHistory,
   computePortfolio,
+  computePortfolioHistory,
   emptySnapshot,
   formatNumber,
   formatPercent,
   formatToman,
   instruments,
+  mergeDailyPrices,
   parseLocalizedNumber,
+  resolveDailyPrice,
   type AssetCategory,
   type AssetRecord,
-  type ManualPriceRecord,
+  type AssetHistoryPoint,
+  type DailyPriceRecord,
   type PortfolioSnapshot,
-  type PriceRecord,
   type TransactionRecord,
   type TransactionType,
 } from "./lib/portfolio";
 import { exportSnapshot, loadSnapshot, parseImportedSnapshot, saveSnapshot } from "./lib/storage";
+import type { PriceSyncResponse } from "./lib/tgju";
 
 const categoryLabels: Record<AssetCategory, string> = {
   gold: "طلا",
@@ -33,9 +48,10 @@ const categoryLabels: Record<AssetCategory, string> = {
   crypto: "رمزارز",
 };
 
-type View = "dashboard" | "assets" | "add" | "prices" | "settings";
+type View = "dashboard" | "assets" | "add" | "prices" | "settings" | "assetHistory";
 type ThemePreference = "auto" | "light" | "dark";
-type PriceTab = "online" | "manual";
+type HistoryRange = 7 | 30 | 90 | "custom";
+type PriceEditorState = { date: string; instrumentId: string };
 const NEW_ASSET_VALUE = "__new_asset__";
 const themeOptions: Array<{ label: string; value: ThemePreference }> = [
   { label: "خودکار", value: "auto" },
@@ -50,6 +66,7 @@ function cn(...classes: Array<string | false | null | undefined>) {
 type IconName =
   | "activity"
   | "archive"
+  | "arrow"
   | "banknote"
   | "chart"
   | "check"
@@ -79,6 +96,12 @@ function Icon({ className, name, size = 18 }: IconProps) {
 
   const paths: Record<IconName, React.ReactNode> = {
     activity: <path {...common} d="M3 12h4l2-6 4 12 2-6h6" />,
+    arrow: (
+      <>
+        <path {...common} d="M19 12H5" />
+        <path {...common} d="m11 18-6-6 6-6" />
+      </>
+    ),
     archive: (
       <>
         <path {...common} d="M4 7h16" />
@@ -188,7 +211,7 @@ function makeIcon(name: IconName) {
 }
 
 const IconActivity = makeIcon("activity");
-const IconArchiveRestore = makeIcon("archive");
+const IconArrow = makeIcon("arrow");
 const IconBanknote = makeIcon("banknote");
 const IconBarChart = makeIcon("chart");
 const IconCheck = makeIcon("check");
@@ -236,7 +259,7 @@ function makeId(prefix: string) {
 }
 
 function todayIso() {
-  return new Date().toISOString().slice(0, 10);
+  return localDateKey();
 }
 
 type JalaliDate = { jd: number; jm: number; jy: number };
@@ -351,12 +374,20 @@ function formatJalaliDate(iso: string) {
 
 function faDate(value?: string) {
   if (!value) return "نامشخص";
-  return new Intl.DateTimeFormat("fa-IR-u-ca-persian", { dateStyle: "medium" }).format(new Date(value));
+  const date = /^\d{4}-\d{2}-\d{2}$/.test(value) ? dateFromLocalKey(value) : new Date(value);
+  return new Intl.DateTimeFormat("fa-IR-u-ca-persian", { dateStyle: "medium" }).format(date);
 }
 
 function faDateTime(value?: string) {
   if (!value) return "نامشخص";
   return new Intl.DateTimeFormat("fa-IR-u-ca-persian", { dateStyle: "medium", timeStyle: "short" }).format(new Date(value));
+}
+
+function faEditedDateTime(value?: string) {
+  if (!value) return "زمان ویرایش نامشخص";
+  const date = new Date(value);
+  const time = date.toLocaleTimeString("fa-IR", { hour: "2-digit", minute: "2-digit", hour12: false });
+  return `ویرایش شده در ${formatJalaliDate(localDateKey(date))} ساعت ${time}`;
 }
 
 function getThemePreference(value: unknown): ThemePreference {
@@ -372,6 +403,34 @@ function formatPriceInput(value: string) {
   if (!digits) return "";
   const parsed = parseLocalizedNumber(digits);
   return Number.isFinite(parsed) ? Math.trunc(parsed).toLocaleString("fa-IR") : "";
+}
+
+function formatDecimalInput(value: string) {
+  const persian = "۰۱۲۳۴۵۶۷۸۹";
+  const arabic = "٠١٢٣٤٥٦٧٨٩";
+  let output = "";
+  let hasDecimal = false;
+
+  for (const char of value) {
+    if (/[0-9]/.test(char)) {
+      output += persian[Number(char)];
+      continue;
+    }
+    if (persian.includes(char)) {
+      output += char;
+      continue;
+    }
+    if (arabic.includes(char)) {
+      output += persian[arabic.indexOf(char)];
+      continue;
+    }
+    if ((char === "." || char === "٫") && !hasDecimal) {
+      output += output ? "٫" : "۰٫";
+      hasDecimal = true;
+    }
+  }
+
+  return output;
 }
 
 function Button({
@@ -559,6 +618,16 @@ function Metric({ label, value, tone = "neutral" }: { label: string; value: stri
   );
 }
 
+function priceSourceLabel(point: Pick<AssetHistoryPoint, "carried" | "priceDate" | "status">) {
+  if (point.carried && point.priceDate) return `محاسبه شده بر اساس قیمت تاریخ ${formatJalaliDate(point.priceDate)}`;
+  if (point.carried) return "محاسبه شده بر اساس آخرین قیمت معتبر";
+  if (point.status === "manual") return "دستی";
+  if (point.status === "edited") return "ویرایش‌شده";
+  if (point.status === "quoted") return "TGJU";
+  if (point.status === "no_quote") return "بدون قیمت";
+  return "نامشخص";
+}
+
 export default function Home() {
   const [snapshot, setSnapshot] = useState<PortfolioSnapshot>(() => emptySnapshot());
   const [loaded, setLoaded] = useState(false);
@@ -566,7 +635,7 @@ export default function Home() {
   const [toast, setToast] = useState("");
   const [isRefreshing, setIsRefreshing] = useState(false);
   const [isAutoRefreshing, setIsAutoRefreshing] = useState(false);
-  const [priceTab, setPriceTab] = useState<PriceTab>("online");
+  const [syncMessage, setSyncMessage] = useState("");
   const [onboardingStep, setOnboardingStep] = useState(0);
   const fileInputRef = useRef<HTMLInputElement | null>(null);
   const autoRefreshStartedRef = useRef(false);
@@ -583,9 +652,18 @@ export default function Home() {
   const [date, setDate] = useState(todayIso());
   const [note, setNote] = useState("");
 
-  const [manualInstrumentId, setManualInstrumentId] = useState("gold_melted_18");
-  const [manualPrice, setManualPrice] = useState("");
-  const [manualNote, setManualNote] = useState("");
+  const [priceDate, setPriceDate] = useState(todayIso());
+  const [priceInstrumentFilter, setPriceInstrumentFilter] = useState("all");
+  const [onlyMissingPrices, setOnlyMissingPrices] = useState(false);
+  const [priceEditor, setPriceEditor] = useState<PriceEditorState | null>(null);
+  const [priceEditorValue, setPriceEditorValue] = useState("");
+  const [priceEditorNote, setPriceEditorNote] = useState("");
+  const [historyAssetId, setHistoryAssetId] = useState("");
+  const [historyRange, setHistoryRange] = useState<HistoryRange>(30);
+  const [customHistoryFrom, setCustomHistoryFrom] = useState(retentionStart(todayIso()));
+  const [customHistoryTo, setCustomHistoryTo] = useState(todayIso());
+  const [historyChartMode, setHistoryChartMode] = useState<HistoryChartMode>("totalProfit");
+  const [pendingDeleteAssetId, setPendingDeleteAssetId] = useState("");
   const [editingAssetId, setEditingAssetId] = useState("");
   const [editCategory, setEditCategory] = useState<AssetCategory>("gold");
   const [editInstrumentId, setEditInstrumentId] = useState("gold_melted_18");
@@ -596,19 +674,36 @@ export default function Home() {
   const [editDate, setEditDate] = useState(todayIso());
   const [editNote, setEditNote] = useState("");
 
-  const summary = useMemo(() => computePortfolio(snapshot), [snapshot]);
+  const today = localDateKey();
+  const summary = useMemo(() => computePortfolio(snapshot, today), [snapshot, today]);
+  const todayPortfolioPoint = useMemo(() => computePortfolioHistory(snapshot, today, today)[0], [snapshot, today]);
   const filteredInstruments = instruments.filter((instrument) => instrument.category === category);
   const filteredEditInstruments = instruments.filter((instrument) => instrument.category === editCategory);
   const themePreference = getThemePreference(snapshot.settings.theme);
   const autoUpdatePrices = getBooleanSetting(snapshot.settings.autoUpdatePrices);
   const onboardingSeen = getBooleanSetting(snapshot.settings.onboardingSeen);
-  const latestOnlineUpdate = [...snapshot.priceCache].sort((a, b) => b.fetchedAt.localeCompare(a.fetchedAt))[0]?.fetchedAt;
+  const latestOnlineUpdate = [...snapshot.dailyPrices]
+    .filter((price) => price.status === "quoted")
+    .sort((a, b) => b.fetchedAt.localeCompare(a.fetchedAt))[0]?.fetchedAt;
+  const selectedHistoryAsset = snapshot.assets.find((asset) => asset.id === historyAssetId);
+  const historyFrom = historyRange === "custom" ? customHistoryFrom : addLocalDays(today, -(historyRange - 1));
+  const historyTo = historyRange === "custom" ? customHistoryTo : today;
+  const historyPoints = useMemo(
+    () => (historyAssetId ? computeAssetHistory(snapshot, historyAssetId, historyFrom, historyTo) : []),
+    [historyAssetId, historyFrom, historyTo, snapshot],
+  );
+  const selectedHistoryHolding = summary.holdings.find((holding) => holding.asset.id === historyAssetId);
+  const selectedPriceRecord = priceEditor
+    ? snapshot.dailyPrices.find((price) => price.instrumentId === priceEditor.instrumentId && price.date === priceEditor.date)
+    : undefined;
+  const selectedPriceInstrument = priceEditor ? instruments.find((instrument) => instrument.id === priceEditor.instrumentId) : undefined;
+  const pendingDeleteAsset = snapshot.assets.find((asset) => asset.id === pendingDeleteAssetId);
   const editingAsset = snapshot.assets.find((asset) => asset.id === editingAssetId);
   const editingTransaction = snapshot.transactions
     .filter((transaction) => transaction.assetId === editingAssetId)
     .sort((a, b) => a.date.localeCompare(b.date))
     .find((transaction) => transaction.type === "buy");
-  const navItems: Array<{ id: View; label: string; icon: ReturnType<typeof makeIcon> }> = [
+  const navItems: Array<{ id: Exclude<View, "assetHistory">; label: string; icon: ReturnType<typeof makeIcon> }> = [
     { id: "dashboard", label: "داشبورد", icon: IconHome },
     { id: "assets", label: "دارایی‌ها", icon: IconBarChart },
     { id: "add", label: "افزودن", icon: IconPlus },
@@ -618,12 +713,41 @@ export default function Home() {
 
   useEffect(() => {
     loadSnapshot()
-      .then((stored) => setSnapshot(stored))
+      .then((stored) => {
+        setSnapshot(stored);
+        const assetId = new URLSearchParams(window.location.search).get("asset");
+        if (assetId && stored.assets.some((asset) => asset.id === assetId)) {
+          setHistoryAssetId(assetId);
+          setActiveView("assetHistory");
+        }
+      })
       .finally(() => setLoaded(true));
 
     if ("serviceWorker" in navigator) {
-      navigator.serviceWorker.register("/sw.js").catch(() => undefined);
+      if (import.meta.env.PROD) {
+        navigator.serviceWorker.register("/sw.js").catch(() => undefined);
+      } else {
+        navigator.serviceWorker.getRegistrations().then((registrations) => registrations.forEach((registration) => registration.unregister())).catch(() => undefined);
+        if ("caches" in window) {
+          window.caches.keys().then((keys) => keys.filter((key) => key.startsWith("asset-log-shell")).forEach((key) => window.caches.delete(key))).catch(() => undefined);
+        }
+      }
     }
+  }, []);
+
+  useEffect(() => {
+    function handlePopState() {
+      const assetId = new URLSearchParams(window.location.search).get("asset") ?? "";
+      if (assetId) {
+        setHistoryAssetId(assetId);
+        setActiveView("assetHistory");
+      } else {
+        setHistoryAssetId("");
+        setActiveView("assets");
+      }
+    }
+    window.addEventListener("popstate", handlePopState);
+    return () => window.removeEventListener("popstate", handlePopState);
   }, []);
 
   useEffect(() => {
@@ -637,6 +761,29 @@ export default function Home() {
 
   function showToast(message: string) {
     setToast(message);
+  }
+
+  function openAssetHistory(assetId: string) {
+    setHistoryAssetId(assetId);
+    setHistoryRange(30);
+    setHistoryChartMode("totalProfit");
+    window.history.pushState({ assetId }, "", `?asset=${encodeURIComponent(assetId)}`);
+    setActiveView("assetHistory");
+  }
+
+  function closeAssetHistory() {
+    if (new URLSearchParams(window.location.search).has("asset")) {
+      window.history.back();
+    } else {
+      setHistoryAssetId("");
+      setActiveView("assets");
+    }
+  }
+
+  function navigateTo(view: Exclude<View, "assetHistory">) {
+    if (new URLSearchParams(window.location.search).has("asset")) window.history.replaceState({}, "", window.location.pathname);
+    setHistoryAssetId("");
+    setActiveView(view);
   }
 
   function setThemePreference(preference: ThemePreference) {
@@ -684,7 +831,7 @@ export default function Home() {
     setEditQuantity(transaction ? formatNumber(transaction.quantity) : "");
     setEditUnitPrice(transaction ? formatPriceInput(String(transaction.unitPrice)) : "");
     setEditFee(transaction ? formatPriceInput(String(transaction.fee)) : "");
-    setEditDate(transaction ? new Date(transaction.date).toISOString().slice(0, 10) : todayIso());
+    setEditDate(transaction ? transactionDateKey(transaction) : todayIso());
     setEditNote(transaction?.note ?? "");
   }
 
@@ -693,36 +840,66 @@ export default function Home() {
   }
 
   const refreshPrices = useCallback(async (options: { auto?: boolean } = {}) => {
+    const refreshToday = localDateKey();
+    const missingRequests = buildMissingPriceRequests(snapshot.dailyPrices, refreshToday);
+    const missingDayCount = missingRequests.reduce((sum, request) => sum + request.dates.length, 0);
+    const refreshTodayInstrumentIds = instruments
+      .filter((instrument) => {
+        const current = snapshot.dailyPrices.find((price) => price.instrumentId === instrument.id && price.date === refreshToday);
+        return current?.status !== "manual" && current?.status !== "edited";
+      })
+      .map((instrument) => instrument.id);
+    const cryptoDates = new Set(
+      missingRequests
+        .filter((request) => instruments.find((instrument) => instrument.id === request.instrumentId)?.category === "crypto")
+        .flatMap((request) => request.dates),
+    );
+    const usdReferences = [...cryptoDates]
+      .map((date) => {
+        const price = resolveDailyPrice("currency_usd", snapshot.dailyPrices, date);
+        return price ? { date, priceToman: price.priceToman } : undefined;
+      })
+      .filter((reference): reference is { date: string; priceToman: number } => Boolean(reference));
+
     setIsRefreshing(true);
     if (options.auto) setIsAutoRefreshing(true);
+    setSyncMessage(missingDayCount > 0 ? `در حال تکمیل ${formatNumber(missingDayCount, 0)} روز ثبت‌نشده` : "در حال تازه‌سازی قیمت امروز");
     const controller = new AbortController();
-    const timeoutId = window.setTimeout(() => controller.abort(), 15000);
+    const timeoutId = window.setTimeout(() => controller.abort(), 60_000);
     try {
-      const response = await fetch("/api/prices", { headers: { accept: "application/json" }, signal: controller.signal });
-      if (!response.ok) throw new Error("bad response");
-      const data = (await response.json()) as { prices?: PriceRecord[]; errors?: string[] };
-      const fresh = data.prices ?? [];
-      setSnapshot((current) => {
-        const freshIds = new Set(fresh.map((price) => price.instrumentId));
-        const stale = current.priceCache
-          .filter((price) => !freshIds.has(price.instrumentId))
-          .map((price) => ({ ...price, source: "cache" as const, stale: true }));
-        return { ...current, manualPrices: [], priceCache: [...fresh, ...stale] };
+      const response = await fetch("/api/prices/sync", {
+        method: "POST",
+        headers: { accept: "application/json", "content-type": "application/json" },
+        body: JSON.stringify({
+          requests: missingRequests,
+          refreshTodayInstrumentIds,
+          today: refreshToday,
+          usdReferences,
+        }),
+        signal: controller.signal,
       });
-      setToast(fresh.length ? "قیمت‌های آنلاین به‌روزرسانی شد و قیمت‌های دستی پاک شد." : "قیمتی خوانده نشد؛ قیمت‌های دستی پاک شد و آخرین داده‌ها باقی ماند.");
-    } catch {
+      if (!response.ok) throw new Error("bad response");
+      const data = (await response.json()) as PriceSyncResponse;
+      if (!Array.isArray(data.records) || !Array.isArray(data.errors)) throw new Error("invalid response");
       setSnapshot((current) => ({
         ...current,
-        manualPrices: [],
-        priceCache: current.priceCache.map((price) => ({ ...price, source: "cache", stale: true })),
+        dailyPrices: mergeDailyPrices(current.dailyPrices, data.records, refreshToday),
       }));
-      setToast("TGJU در دسترس نبود؛ قیمت‌های دستی پاک شد و داده‌های ذخیره‌شده نمایش داده می‌شود.");
+      const failureCount = data.errors.length;
+      setToast(
+        data.records.length > 0
+          ? `${formatNumber(data.records.length, 0)} قیمت روزانه ذخیره شد${failureCount ? `؛ ${formatNumber(failureCount, 0)} مورد ناموفق` : ""}.`
+          : "قیمت تازه‌ای دریافت نشد؛ داده‌های قبلی بدون تغییر باقی ماند.",
+      );
+    } catch {
+      setToast("TGJU در دسترس نبود؛ هیچ‌کدام از قیمت‌های ذخیره‌شده تغییر نکرد.");
     } finally {
       window.clearTimeout(timeoutId);
       setIsRefreshing(false);
       if (options.auto) setIsAutoRefreshing(false);
+      setSyncMessage("");
     }
-  }, []);
+  }, [snapshot.dailyPrices]);
 
   useEffect(() => {
     if (!loaded || !autoUpdatePrices || autoRefreshStartedRef.current) return;
@@ -763,7 +940,8 @@ export default function Home() {
         quantity: qty,
         unitPrice: price,
         fee: feeValue,
-        date: new Date(date).toISOString(),
+        date: localDateTimeForKey(date),
+        dateKey: date,
         note: note.trim() || undefined,
       };
 
@@ -781,33 +959,89 @@ export default function Home() {
     setCustomName("");
     setExistingAssetId("");
     showToast("ثبت شد.");
-    setActiveView("dashboard");
+    navigateTo("dashboard");
   }
 
-  function saveManualPrice(event: React.FormEvent<HTMLFormElement>) {
+  function openPriceEditor(instrumentId: string, selectedDate: string) {
+    const existing = snapshot.dailyPrices.find((price) => price.instrumentId === instrumentId && price.date === selectedDate);
+    setPriceEditor({ instrumentId, date: selectedDate });
+    setPriceEditorValue(existing?.priceToman ? formatPriceInput(String(existing.priceToman)) : "");
+    setPriceEditorNote(existing?.note ?? "");
+  }
+
+  function closePriceEditor() {
+    setPriceEditor(null);
+    setPriceEditorValue("");
+    setPriceEditorNote("");
+  }
+
+  function savePriceEdit(event: React.FormEvent<HTMLFormElement>) {
     event.preventDefault();
-    const instrument = instruments.find((item) => item.id === manualInstrumentId);
-    const value = parseLocalizedNumber(manualPrice);
+    if (!priceEditor) return;
+    const instrument = instruments.find((item) => item.id === priceEditor.instrumentId);
+    const value = parseLocalizedNumber(priceEditorValue);
     if (!instrument || value <= 0) {
-      showToast("قیمت دستی معتبر نیست.");
+      showToast("قیمت واردشده معتبر نیست.");
       return;
     }
-    const record: ManualPriceRecord = {
-      instrumentId: instrument.id,
-      name: instrument.name,
-      category: instrument.category,
-      priceToman: value,
-      source: "manual",
-      fetchedAt: new Date().toISOString(),
-      note: manualNote.trim() || undefined,
-    };
-    setSnapshot((current) => ({
-      ...current,
-      manualPrices: [record, ...current.manualPrices.filter((price) => price.instrumentId !== record.instrumentId)],
-    }));
-    setManualPrice("");
-    setManualNote("");
-    showToast("قیمت دستی ذخیره شد.");
+    setSnapshot((current) => {
+      const existing = current.dailyPrices.find((price) => price.instrumentId === instrument.id && price.date === priceEditor.date);
+      const isFetchedPrice = Boolean(existing?.priceToman && (existing.status === "quoted" || existing.status === "edited"));
+      const record: DailyPriceRecord = {
+        instrumentId: instrument.id,
+        name: instrument.name,
+        category: instrument.category,
+        date: priceEditor.date,
+        status: isFetchedPrice ? "edited" : "manual",
+        priceToman: value,
+        fetchedAt: existing?.fetchedAt ?? new Date().toISOString(),
+        sourceUrl: existing?.sourceUrl,
+        rawValue: existing?.rawValue,
+        originalPriceToman: isFetchedPrice ? existing?.originalPriceToman ?? existing?.priceToman : undefined,
+        editedAt: isFetchedPrice ? new Date().toISOString() : undefined,
+        note: priceEditorNote.trim() || undefined,
+      };
+      return {
+        ...current,
+        dailyPrices: [
+          ...current.dailyPrices.filter((price) => !(price.instrumentId === instrument.id && price.date === priceEditor.date)),
+          record,
+        ],
+      };
+    });
+    closePriceEditor();
+    showToast("قیمت این روز ذخیره شد.");
+  }
+
+  function restorePriceFromTgju() {
+    if (!priceEditor) return;
+    setSnapshot((current) => {
+      const existing = current.dailyPrices.find((price) => price.instrumentId === priceEditor.instrumentId && price.date === priceEditor.date);
+      if (existing?.status === "edited" && existing.originalPriceToman) {
+        const restored: DailyPriceRecord = {
+          ...existing,
+          status: "quoted",
+          priceToman: existing.originalPriceToman,
+          originalPriceToman: undefined,
+          editedAt: undefined,
+          note: undefined,
+        };
+        return {
+          ...current,
+          dailyPrices: current.dailyPrices.map((price) =>
+            price.instrumentId === restored.instrumentId && price.date === restored.date ? restored : price,
+          ),
+        };
+      }
+      return {
+        ...current,
+        dailyPrices: current.dailyPrices.filter(
+          (price) => !(price.instrumentId === priceEditor.instrumentId && price.date === priceEditor.date),
+        ),
+      };
+    });
+    closePriceEditor();
+    showToast("قیمت محلی حذف شد؛ در به‌روزرسانی بعدی از TGJU دریافت می‌شود.");
   }
 
   function saveEditedAsset(event: React.FormEvent<HTMLFormElement>) {
@@ -831,7 +1065,8 @@ export default function Home() {
       quantity: qty,
       unitPrice: price,
       fee: feeValue,
-      date: new Date(editDate).toISOString(),
+      date: localDateTimeForKey(editDate),
+      dateKey: editDate,
       note: editNote.trim() || undefined,
     };
 
@@ -861,11 +1096,18 @@ export default function Home() {
   }
 
   function removeAsset(assetId: string) {
+    setPendingDeleteAssetId(assetId);
+  }
+
+  function confirmRemoveAsset() {
+    if (!pendingDeleteAssetId) return;
+
     setSnapshot((current) => ({
       ...current,
-      assets: current.assets.filter((asset) => asset.id !== assetId),
-      transactions: current.transactions.filter((transaction) => transaction.assetId !== assetId),
+      assets: current.assets.filter((asset) => asset.id !== pendingDeleteAssetId),
+      transactions: current.transactions.filter((transaction) => transaction.assetId !== pendingDeleteAssetId),
     }));
+    setPendingDeleteAssetId("");
     showToast("دارایی حذف شد.");
   }
 
@@ -891,46 +1133,74 @@ export default function Home() {
 
   const mainContent = (
     <>
+      {activeView === "assetHistory" && selectedHistoryAsset && selectedHistoryHolding && (
+        <AssetHistoryPage
+          assetName={selectedHistoryAsset.name}
+          chartMode={historyChartMode}
+          from={historyFrom}
+          holding={selectedHistoryHolding}
+          onBack={closeAssetHistory}
+          onChartModeChange={setHistoryChartMode}
+          onCustomFromChange={(value) => {
+            setHistoryRange("custom");
+            setCustomHistoryFrom(value);
+          }}
+          onCustomToChange={(value) => {
+            setHistoryRange("custom");
+            setCustomHistoryTo(value);
+          }}
+          onRangeChange={setHistoryRange}
+          points={historyPoints}
+          range={historyRange}
+          to={historyTo}
+        />
+      )}
+
       {activeView === "dashboard" && (
-        <div className="grid gap-4">
-          <Card className="hero-card text-white">
-            <div className="flex items-start justify-between gap-4">
-              <div>
-                <p className="text-sm text-white/80">ارزش کل دارایی‌ها</p>
-                <h1 className="money-hero mt-2 font-black">{formatToman(summary.totalValue)}</h1>
+        <div className="locked-view">
+          <div className="locked-view-fixed">
+            <Card className="hero-card text-white">
+              <div className="flex items-start justify-between gap-4">
+                <div>
+                  <p className="text-sm text-white/80">ارزش کل دارایی‌ها</p>
+                  <h1 className="money-hero mt-2 font-black">{formatToman(summary.totalValue)}</h1>
+                </div>
+                <IconWallet className="mt-1 shrink-0 text-white/75" size={30} />
               </div>
-              <IconWallet className="mt-1 shrink-0 text-white/75" size={30} />
-            </div>
-            <div className="mt-5 grid grid-cols-1 gap-3 min-[430px]:grid-cols-2">
-              <div className="rounded-lg bg-white/12 p-3">
-                <p className="text-xs text-white/70">سود کل</p>
-                <p className="mt-1 font-bold">{formatToman(summary.totalProfit)}</p>
+              <div className="mt-5 grid grid-cols-2 gap-2">
+                <div className="rounded-lg bg-white/12 p-3">
+                  <p className="text-xs text-white/70">سود/زیان کل</p>
+                  <p className="money-value mt-1 font-bold">{formatToman(summary.totalProfit)}</p>
+                  <p className="mt-1 text-xs text-white/75">{formatPercent(summary.totalProfitPercent)}</p>
+                </div>
+                <div className="rounded-lg bg-white/12 p-3">
+                  <p className="text-xs text-white/70">سود/زیان امروز</p>
+                  <p className="money-value mt-1 font-bold">{todayPortfolioPoint?.dailyProfit === null || todayPortfolioPoint?.dailyProfit === undefined ? "نامشخص" : formatToman(todayPortfolioPoint.dailyProfit)}</p>
+                  <p className="mt-1 text-xs text-white/75">
+                    {todayPortfolioPoint?.dailyProfitPercent === null || todayPortfolioPoint?.dailyProfitPercent === undefined ? "داده کافی نیست" : formatPercent(todayPortfolioPoint.dailyProfitPercent)}
+                  </p>
+                </div>
               </div>
-              <div className="rounded-lg bg-white/12 p-3">
-                <p className="text-xs text-white/70">بازده</p>
-                <p className="mt-1 font-bold">{formatPercent(summary.totalProfitPercent)}</p>
-              </div>
-            </div>
-          </Card>
+            </Card>
 
-          {summary.stalePriceCount > 0 && (
-            <div className="rounded-lg border border-amber-300 bg-amber-50 p-3 text-sm text-amber-900">
-              {formatNumber(summary.stalePriceCount, 0)} دارایی با قیمت ذخیره‌شده نمایش داده می‌شود.
-            </div>
-          )}
+            {(summary.carriedPriceCount > 0 || summary.missingPriceCount > 0) && (
+              <div className="rounded-lg border border-amber-300 bg-amber-50 p-3 text-sm text-amber-900">
+                {summary.missingPriceCount > 0
+                  ? `${formatNumber(summary.missingPriceCount, 0)} دارایی قیمت معتبر ندارد.`
+                  : `${formatNumber(summary.carriedPriceCount, 0)} دارایی با آخرین قیمت معتبر قبلی محاسبه شده است.`}
+              </div>
+            )}
 
-          <div className="flex gap-2">
-            <Button className="flex-1" onClick={() => setActiveView("add")}>
-              <IconPlus size={18} />
-              ثبت دارایی
-            </Button>
-            <Button variant="secondary" onClick={refreshPrices} disabled={isRefreshing}>
-              <IconRefresh className={cn(isRefreshing && "animate-spin")} size={18} />
-            </Button>
           </div>
 
-          <section className="grid gap-3">
-            <h2 className="text-base font-extrabold">دارایی‌های فعال</h2>
+          <section className="locked-view-list">
+            <div className="flex items-center justify-between gap-3">
+              <h2 className="text-base font-extrabold">دارایی‌های فعال</h2>
+              <Button className="min-h-9 shrink-0 px-3 py-1.5" onClick={() => navigateTo("add")}>
+                <IconPlus size={16} />
+                افزودن دارایی
+              </Button>
+            </div>
             {summary.holdings.length === 0 ? (
               <Card className="text-center text-sm text-[var(--muted-foreground)]">هنوز دارایی ثبت نشده است.</Card>
             ) : (
@@ -941,12 +1211,30 @@ export default function Home() {
       )}
 
       {activeView === "assets" && (
-        <div className="grid gap-3">
-          <PageTitle title="دارایی‌ها" subtitle={`${formatNumber(summary.holdings.length, 0)} مورد ثبت‌شده`} />
-          {summary.holdings.map((holding) => (
-            <HoldingCard key={holding.asset.id} holding={holding} onEdit={openEditAsset} onRemove={removeAsset} expanded />
-          ))}
-          {summary.holdings.length === 0 && <Card className="text-sm text-[var(--muted-foreground)]">از تب افزودن، اولین خرید یا موجودی فعلی را ثبت کنید.</Card>}
+        <div className="locked-view">
+          <div className="locked-view-fixed">
+            <div className="flex items-end justify-between gap-3">
+              <PageTitle title="دارایی‌ها" subtitle={`${formatNumber(summary.holdings.length, 0)} مورد ثبت‌شده`} />
+              <Button className="min-h-9 shrink-0 px-3 py-1.5" onClick={() => navigateTo("add")}>
+                <IconPlus size={16} />
+                افزودن دارایی
+              </Button>
+            </div>
+          </div>
+          <div className="locked-view-list">
+            {summary.holdings.map((holding) => (
+              <HoldingCard
+                key={holding.asset.id}
+                expanded
+                history={computeAssetHistory(snapshot, holding.asset.id, addLocalDays(today, -29), today)}
+                holding={holding}
+                onEdit={openEditAsset}
+                onOpenHistory={openAssetHistory}
+                onRemove={removeAsset}
+              />
+            ))}
+            {summary.holdings.length === 0 && <Card className="text-sm text-[var(--muted-foreground)]">از تب افزودن، اولین خرید یا موجودی فعلی را ثبت کنید.</Card>}
+          </div>
         </div>
       )}
 
@@ -1025,7 +1313,7 @@ export default function Home() {
 
             <div className="grid grid-cols-1 gap-3 min-[430px]:grid-cols-2">
               <Field label="مقدار">
-                <TextInput inputMode="decimal" value={quantity} onChange={(event) => setQuantity(event.target.value)} placeholder="۱۴۷.۸" />
+                <TextInput inputMode="decimal" value={quantity} onChange={(event) => setQuantity(formatDecimalInput(event.target.value))} placeholder="۱۴۷٫۸" />
               </Field>
               <Field label="قیمت واحد (تومان)">
                 <TextInput inputMode="numeric" value={unitPrice} onChange={(event) => setUnitPrice(formatPriceInput(event.target.value))} placeholder="۶٬۷۶۲٬۲۰۰" />
@@ -1051,117 +1339,122 @@ export default function Home() {
       )}
 
       {activeView === "prices" && (
-        <div className="grid gap-4">
-          <PageTitle title="قیمت‌ها" subtitle="قیمت آنلاین TGJU یا قیمت دستی خودتان" />
-          <div className="grid grid-cols-2 rounded-lg bg-[var(--muted)] p-1">
-            {[
-              { label: "قیمت آنلاین", value: "online" as const },
-              { label: "قیمت دستی", value: "manual" as const },
-            ].map((item) => (
-              <button
-                key={item.value}
-                aria-pressed={priceTab === item.value}
-                className={cn(
-                  "rounded-md px-2 py-2 text-sm font-bold transition",
-                  priceTab === item.value ? "bg-[var(--surface)] text-[var(--primary)] shadow-sm" : "text-[var(--muted-foreground)]",
-                )}
-                onClick={() => setPriceTab(item.value)}
-                type="button"
-              >
-                {item.label}
-              </button>
-            ))}
+        <div className="locked-view">
+          <div className="locked-view-fixed">
+            <PageTitle title="قیمت‌ها" subtitle="تاریخچه ۹۰ روزه قیمت‌های TGJU" />
+            <Card className="grid gap-3">
+              <div className="flex min-w-0 items-start justify-between gap-3">
+                <div className="min-w-0">
+                  <h2 className="font-extrabold">همگام‌سازی قیمت‌ها</h2>
+                  <p className="mt-1 text-xs text-[var(--muted-foreground)]">آخرین دریافت موفق: {latestOnlineUpdate ? faDateTime(latestOnlineUpdate) : "هنوز دریافت نشده"}</p>
+                </div>
+                <IconRefresh className={cn("mt-1 shrink-0 text-[var(--primary)]", isRefreshing && "animate-spin")} size={20} />
+              </div>
+              <label className="rtl-checkbox rounded-lg border border-[var(--border)] bg-[var(--background)] px-3 py-3 text-sm font-bold">
+                <input
+                  checked={autoUpdatePrices}
+                  className="h-5 w-5 accent-[var(--primary)]"
+                  onChange={(event) => setAutoUpdatePrices(event.target.checked)}
+                  type="checkbox"
+                />
+                <span>به‌روزرسانی خودکار در شروع برنامه</span>
+              </label>
+              <Button onClick={() => refreshPrices()} disabled={isRefreshing}>
+                <IconRefresh className={cn(isRefreshing && "animate-spin")} size={18} />
+                بروزرسانی قیمت‌ها
+              </Button>
+            </Card>
+
+            <Card className="grid gap-3">
+              <div className="grid grid-cols-[2.75rem_minmax(0,1fr)_2.75rem] items-end gap-2">
+                <Button
+                  aria-label="روز بعد"
+                  className="min-h-11 px-0"
+                  disabled={priceDate >= today}
+                  onClick={() => setPriceDate((current) => addLocalDays(current, 1))}
+                  variant="secondary"
+                >
+                  <IconArrow className="rotate-180" size={18} />
+                </Button>
+                <Field label="تاریخ قیمت">
+                  <PersianDatePicker
+                    value={priceDate}
+                    onChange={(value) => setPriceDate(value < retentionStart(today) ? retentionStart(today) : value > today ? today : value)}
+                  />
+                </Field>
+                <Button
+                  aria-label="روز قبل"
+                  className="min-h-11 px-0"
+                  disabled={priceDate <= retentionStart(today)}
+                  onClick={() => setPriceDate((current) => addLocalDays(current, -1))}
+                  variant="secondary"
+                >
+                  <IconArrow size={18} />
+                </Button>
+              </div>
+              <Field label="بازار">
+                <SelectBox
+                  value={priceInstrumentFilter}
+                  onValueChange={setPriceInstrumentFilter}
+                  items={[{ value: "all", label: "همه بازارها" }, ...instruments.map((instrument) => ({ value: instrument.id, label: instrument.name }))]}
+                />
+              </Field>
+              <label className="rtl-checkbox text-sm font-bold">
+                <input
+                  checked={onlyMissingPrices}
+                  className="h-5 w-5 accent-[var(--primary)]"
+                  onChange={(event) => setOnlyMissingPrices(event.target.checked)}
+                  type="checkbox"
+                />
+                <span>فقط قیمت‌های ناقص</span>
+              </label>
+            </Card>
           </div>
 
-          {priceTab === "online" && (
-            <>
-              <Card className="grid gap-3">
-                <div className="flex min-w-0 items-start justify-between gap-3">
-                  <div className="min-w-0">
-                    <h2 className="font-extrabold">قیمت آنلاین</h2>
-                    <p className="mt-1 text-xs text-[var(--muted-foreground)]">آخرین به‌روزرسانی: {latestOnlineUpdate ? faDateTime(latestOnlineUpdate) : "هنوز دریافت نشده"}</p>
-                  </div>
-                  <IconRefresh className={cn("mt-1 shrink-0 text-[var(--primary)]", isRefreshing && "animate-spin")} size={20} />
-                </div>
-                <label className="flex items-center justify-between gap-3 rounded-lg border border-[var(--border)] bg-[var(--background)] px-3 py-3 text-sm font-bold">
-                  <span>به‌روزرسانی خودکار در شروع برنامه</span>
-                  <input
-                    checked={autoUpdatePrices}
-                    className="h-5 w-5 accent-[var(--primary)]"
-                    onChange={(event) => setAutoUpdatePrices(event.target.checked)}
-                    type="checkbox"
-                  />
-                </label>
-                <Button onClick={() => refreshPrices()} disabled={isRefreshing}>
-                  <IconRefresh className={cn(isRefreshing && "animate-spin")} size={18} />
-                  به‌روزرسانی از TGJU
-                </Button>
-                <p className="text-xs leading-6 text-[var(--muted-foreground)]">با به‌روزرسانی آنلاین، همه قیمت‌های دستی پاک می‌شوند.</p>
-              </Card>
-              <div className="grid gap-2">
-                {snapshot.priceCache.length === 0 && (
-                  <Card className="text-sm text-[var(--muted-foreground)]">هنوز قیمت آنلاینی ذخیره نشده است.</Card>
-                )}
-                {[...snapshot.priceCache]
-                  .sort((a, b) => b.fetchedAt.localeCompare(a.fetchedAt))
-                  .slice(0, 20)
-                  .map((price) => (
-                    <Card key={`${price.source}-${price.instrumentId}`} className="flex items-center justify-between gap-3">
-                      <div className="min-w-0">
-                        <p className="truncate font-bold">{price.name}</p>
-                        <p className="inline-flex flex-row items-center gap-1 text-right text-xs text-[var(--muted-foreground)]" dir="rtl">
-                          <span dir="ltr">{price.stale ? "ذخیره‌شده" : "TGJU"}</span>
-                          <span> · </span>
-                          <span>{faDate(price.fetchedAt)}</span>
-                        </p>
-                      </div>
-                      <p className="shrink-0 text-sm font-extrabold">{formatToman(price.priceToman)}</p>
-                    </Card>
-                  ))}
-              </div>
-            </>
-          )}
-
-          {priceTab === "manual" && (
-            <>
-              <form onSubmit={saveManualPrice}>
-                <Card className="grid gap-3">
-                  <h2 className="font-extrabold">قیمت دستی</h2>
-                  <Field label="بازار">
-                    <SelectBox value={manualInstrumentId} onValueChange={setManualInstrumentId} items={instruments.map((item) => ({ value: item.id, label: item.name }))} />
-                  </Field>
-                  <Field label="قیمت دستی (تومان)">
-                    <TextInput inputMode="numeric" value={manualPrice} onChange={(event) => setManualPrice(formatPriceInput(event.target.value))} placeholder="۲۳٬۹۱۵٬۶۰۰" />
-                  </Field>
-                  <Field label="یادداشت">
-                    <TextInput value={manualNote} onChange={(event) => setManualNote(event.target.value)} placeholder="مثلاً قیمت صرافی/طلافروش" />
-                  </Field>
-                  <Button type="submit" variant="secondary">ذخیره قیمت دستی</Button>
-                </Card>
-              </form>
-              <div className="grid gap-2">
-                {snapshot.manualPrices.length === 0 && (
-                  <Card className="text-sm text-[var(--muted-foreground)]">هنوز قیمت دستی ثبت نشده است.</Card>
-                )}
-                {[...snapshot.manualPrices]
-                  .sort((a, b) => b.fetchedAt.localeCompare(a.fetchedAt))
-                  .slice(0, 20)
-                  .map((price) => (
-                    <Card key={`${price.source}-${price.instrumentId}`} className="flex items-center justify-between gap-3">
-                      <div className="min-w-0">
-                        <p className="truncate font-bold">{price.name}</p>
-                        <p className="inline-flex flex-row items-center gap-1 text-right text-xs text-[var(--muted-foreground)]" dir="rtl">
-                          <span>دستی</span>
-                          <span> · </span>
-                          <span>{faDate(price.fetchedAt)}</span>
-                        </p>
-                      </div>
-                      <p className="shrink-0 text-sm font-extrabold">{formatToman(price.priceToman)}</p>
-                    </Card>
-                  ))}
-              </div>
-            </>
-          )}
+          <div className="locked-view-list">
+            {instruments
+              .filter((instrument) => priceInstrumentFilter === "all" || instrument.id === priceInstrumentFilter)
+              .filter((instrument) => {
+                const exact = snapshot.dailyPrices.find((price) => price.instrumentId === instrument.id && price.date === priceDate);
+                return !onlyMissingPrices || !exact || exact.status === "no_quote";
+              })
+              .map((instrument) => {
+                const exact = snapshot.dailyPrices.find((price) => price.instrumentId === instrument.id && price.date === priceDate);
+                const resolved = resolveDailyPrice(instrument.id, snapshot.dailyPrices, priceDate);
+                const isMissing = !exact || exact.status === "no_quote";
+                const sourceLabel = exact?.status === "quoted"
+                  ? "TGJU"
+                  : exact?.status === "edited"
+                    ? "ویرایش‌شده"
+                    : exact?.status === "manual"
+                      ? "دستی"
+                      : exact?.status === "no_quote"
+                        ? "بدون معامله"
+                        : "دریافت نشده";
+                const Icon = categoryIcons[instrument.category];
+                return (
+                  <Card key={`${instrument.id}-${priceDate}`} className="grid grid-cols-[2.5rem_minmax(0,1fr)_auto] items-center gap-3 p-3">
+                    <div className="grid h-10 w-10 shrink-0 place-items-center rounded-lg bg-[var(--primary-soft)] text-[var(--primary)]">
+                      <Icon size={19} />
+                    </div>
+                    <div className="min-w-0">
+                      <p className="truncate font-bold">{instrument.name}</p>
+                      <p className="mt-1 text-xs leading-5 text-[var(--muted-foreground)]">
+                        {exact?.status === "edited" ? faEditedDateTime(exact.editedAt) : sourceLabel}
+                        {isMissing && resolved ? ` · آخرین نرخ ${faDate(resolved.date)}` : ""}
+                      </p>
+                      <p className="money-value mt-2 font-extrabold">
+                        {exact?.priceToman ? formatToman(exact.priceToman) : resolved ? formatToman(resolved.priceToman) : "بدون قیمت"}
+                      </p>
+                    </div>
+                    <Button className="min-h-9 px-3" onClick={() => openPriceEditor(instrument.id, priceDate)} variant={isMissing ? "primary" : "secondary"}>
+                      {isMissing ? <IconPlus size={16} /> : <IconEdit size={16} />}
+                      {isMissing ? "ثبت" : "ویرایش"}
+                    </Button>
+                  </Card>
+                );
+              })}
+          </div>
         </div>
       )}
 
@@ -1222,46 +1515,23 @@ export default function Home() {
 
   return (
     <Toast.Provider swipeDirection="right">
-      <main className="min-h-screen bg-[var(--background)] pb-[calc(7rem+env(safe-area-inset-bottom))] text-[var(--foreground)]">
-        <header className="sticky top-0 z-20 border-b border-[var(--border)] bg-[var(--background)]/92 backdrop-blur">
+      <main className={cn("min-h-screen bg-[var(--background)] text-[var(--foreground)]", activeView === "assetHistory" ? "pb-6" : "pb-[calc(7rem+env(safe-area-inset-bottom))]")}>
+        {activeView !== "assetHistory" && <header className="sticky top-0 z-20 border-b border-[var(--border)] bg-[var(--background)]/92 backdrop-blur">
           <div className="mx-auto flex max-w-3xl items-center justify-between px-4 py-3">
             <div>
-              <p className="text-xs text-[var(--muted-foreground)]">سرمایه من</p>
               <p className="text-lg font-black">سرمایه من</p>
             </div>
-            <Dialog.Root>
-              <Dialog.Trigger asChild>
-                <Button variant="secondary" className="h-10 min-h-10 px-3">
-                  <IconArchiveRestore size={18} />
-                </Button>
-              </Dialog.Trigger>
-              <Dialog.Portal>
-                <Dialog.Overlay className="fixed inset-0 z-40 bg-black/35" />
-                <Dialog.Content className="fixed right-4 left-4 top-24 z-50 mx-auto max-w-md rounded-lg bg-[var(--surface)] p-4 shadow-2xl">
-                  <div className="flex items-start justify-between gap-3">
-                    <div>
-                      <Dialog.Title className="text-lg font-extrabold">بکاپ سریع</Dialog.Title>
-                      <Dialog.Description className="mt-1 text-sm text-[var(--muted-foreground)]">خروجی و ورود فایل JSON برای انتقال بین دستگاه‌ها.</Dialog.Description>
-                    </div>
-                    <Dialog.Close className="rounded-md p-1 hover:bg-[var(--muted)]">
-                      <IconX size={18} />
-                    </Dialog.Close>
-                  </div>
-                  <div className="mt-4 grid gap-2">
-                    <Button onClick={downloadBackup}>
-                      <IconDownload size={18} />
-                      دریافت فایل
-                    </Button>
-                    <Button variant="secondary" onClick={() => fileInputRef.current?.click()}>
-                      <IconUpload size={18} />
-                      ورود فایل
-                    </Button>
-                  </div>
-                </Dialog.Content>
-              </Dialog.Portal>
-            </Dialog.Root>
+            <Button
+              aria-label="بروزرسانی قیمت‌ها"
+              className="h-10 min-h-10 px-3"
+              disabled={isRefreshing}
+              onClick={() => refreshPrices()}
+              variant="secondary"
+            >
+              <IconRefresh className={cn(isRefreshing && "animate-spin")} size={18} />
+            </Button>
           </div>
-        </header>
+        </header>}
 
         {isAutoRefreshing && (
           <div className="fixed left-4 right-4 top-20 z-50 mx-auto max-w-md rounded-lg border border-[var(--border)] bg-[var(--surface)] px-4 py-3 shadow-xl">
@@ -1271,7 +1541,7 @@ export default function Home() {
               </div>
               <div className="min-w-0">
                 <p className="font-extrabold">در حال به‌روزرسانی قیمت‌ها</p>
-                <p className="mt-1 text-xs text-[var(--muted-foreground)]">آخرین قیمت‌های آنلاین از TGJU دریافت می‌شود.</p>
+                <p className="mt-1 text-xs text-[var(--muted-foreground)]">{syncMessage || "آخرین قیمت‌های آنلاین از TGJU دریافت می‌شود."}</p>
               </div>
             </div>
           </div>
@@ -1322,7 +1592,94 @@ export default function Home() {
           </Dialog.Portal>
         </Dialog.Root>
 
-        <div className="mx-auto grid max-w-3xl gap-4 px-4 py-4">{mainContent}</div>
+        <div className={cn("app-content", (activeView === "dashboard" || activeView === "assets" || activeView === "prices") && "is-locked")}>{mainContent}</div>
+
+        <Dialog.Root open={Boolean(pendingDeleteAssetId)} onOpenChange={(open) => !open && setPendingDeleteAssetId("")}>
+          <Dialog.Portal>
+            <Dialog.Overlay className="fixed inset-0 z-40 bg-black/45" />
+            <Dialog.Content className="price-dialog fixed z-50 overflow-hidden rounded-lg border border-[var(--border)] bg-[var(--surface)] p-4 shadow-2xl">
+              <div className="flex items-start justify-between gap-3">
+                <div className="min-w-0">
+                  <Dialog.Title className="text-lg font-extrabold">حذف دارایی</Dialog.Title>
+                  <Dialog.Description className="mt-2 text-sm leading-7 text-[var(--muted-foreground)]">
+                    دارایی «{pendingDeleteAsset?.name ?? "انتخاب‌شده"}» و همه تراکنش‌های مربوط به آن حذف می‌شود.
+                  </Dialog.Description>
+                </div>
+                <Dialog.Close className="rounded-md p-1 hover:bg-[var(--muted)]">
+                  <IconX size={18} />
+                </Dialog.Close>
+              </div>
+              <div className="mt-4 rounded-lg border border-red-200 bg-red-50 p-3 text-sm leading-6 text-red-800 dark:border-red-900/60 dark:bg-red-950/30 dark:text-red-200">
+                این عملیات قابل بازگشت نیست. اگر لازم دارید، قبل از حذف از بخش تنظیمات خروجی JSON بگیرید.
+              </div>
+              <div className="mt-4 grid grid-cols-2 gap-2 border-t border-[var(--border)] pt-3">
+                <Button type="button" variant="danger" onClick={confirmRemoveAsset}>
+                  حذف دارایی
+                </Button>
+                <Dialog.Close asChild>
+                  <Button type="button" variant="secondary">
+                    انصراف
+                  </Button>
+                </Dialog.Close>
+              </div>
+            </Dialog.Content>
+          </Dialog.Portal>
+        </Dialog.Root>
+
+        <Dialog.Root open={Boolean(priceEditor)} onOpenChange={(open) => !open && closePriceEditor()}>
+          <Dialog.Portal>
+            <Dialog.Overlay className="fixed inset-0 z-40 bg-black/45" />
+            <Dialog.Content className="price-dialog fixed z-50 flex flex-col overflow-hidden rounded-lg border border-[var(--border)] bg-[var(--surface)] p-4 shadow-2xl">
+              <div className="flex items-start justify-between gap-3">
+                <div className="min-w-0">
+                  <Dialog.Title className="text-lg font-extrabold">
+                    {selectedPriceRecord?.priceToman ? "ویرایش قیمت" : "ثبت قیمت روز"}
+                  </Dialog.Title>
+                  <Dialog.Description className="mt-1 text-sm text-[var(--muted-foreground)]">
+                    {selectedPriceInstrument?.name} · {priceEditor ? faDate(priceEditor.date) : ""}
+                  </Dialog.Description>
+                </div>
+                <Dialog.Close className="rounded-md p-1 hover:bg-[var(--muted)]">
+                  <IconX size={18} />
+                </Dialog.Close>
+              </div>
+              <form className="mt-4 grid gap-4" onSubmit={savePriceEdit}>
+                {selectedPriceRecord?.status === "quoted" && selectedPriceRecord.priceToman && (
+                  <div className="rounded-lg bg-[var(--muted)] p-3 text-xs text-[var(--muted-foreground)]">
+                    قیمت دریافت‌شده از TGJU: <strong className="text-[var(--foreground)]">{formatToman(selectedPriceRecord.priceToman)}</strong>
+                  </div>
+                )}
+                <Field label="قیمت واحد (تومان)">
+                  <TextInput
+                    autoFocus
+                    inputMode="numeric"
+                    onChange={(event) => setPriceEditorValue(formatPriceInput(event.target.value))}
+                    placeholder="۲۳٬۹۱۵٬۶۰۰"
+                    value={priceEditorValue}
+                  />
+                </Field>
+                <Field label="یادداشت">
+                  <TextInput onChange={(event) => setPriceEditorNote(event.target.value)} placeholder="اختیاری" value={priceEditorNote} />
+                </Field>
+                <div className="grid grid-cols-2 gap-2 border-t border-[var(--border)] pt-3">
+                  <Button type="submit">
+                    <IconCheck size={17} />
+                    ذخیره
+                  </Button>
+                  <Dialog.Close asChild>
+                    <Button type="button" variant="secondary">انصراف</Button>
+                  </Dialog.Close>
+                </div>
+                {(selectedPriceRecord?.status === "edited" || selectedPriceRecord?.status === "manual") && (
+                  <Button onClick={restorePriceFromTgju} type="button" variant="ghost">
+                    <IconRefresh size={16} />
+                    بازگردانی قیمت TGJU
+                  </Button>
+                )}
+              </form>
+            </Dialog.Content>
+          </Dialog.Portal>
+        </Dialog.Root>
 
         <Dialog.Root open={Boolean(editingAssetId)} onOpenChange={(open) => !open && closeEditAsset()}>
           <Dialog.Portal>
@@ -1369,7 +1726,7 @@ export default function Home() {
                   </Field>
                   <div className="grid grid-cols-1 gap-3 min-[430px]:grid-cols-2">
                     <Field label="مقدار">
-                      <TextInput inputMode="decimal" value={editQuantity} onChange={(event) => setEditQuantity(event.target.value)} />
+                      <TextInput inputMode="decimal" value={editQuantity} onChange={(event) => setEditQuantity(formatDecimalInput(event.target.value))} />
                     </Field>
                     <Field label="قیمت واحد (تومان)">
                       <TextInput inputMode="numeric" value={editUnitPrice} onChange={(event) => setEditUnitPrice(formatPriceInput(event.target.value))} />
@@ -1403,7 +1760,7 @@ export default function Home() {
           </Dialog.Portal>
         </Dialog.Root>
 
-        <nav className="oneui-tabbar fixed inset-x-0 bottom-0 z-30 px-3 pb-[calc(0.75rem+env(safe-area-inset-bottom))] pt-2" aria-label="ناوبری اصلی">
+        {activeView !== "assetHistory" && <nav className="oneui-tabbar fixed inset-x-0 bottom-0 z-30 px-3 pb-[calc(0.75rem+env(safe-area-inset-bottom))] pt-2" aria-label="ناوبری اصلی">
           <div className="oneui-tabbar-shell mx-auto grid max-w-md grid-cols-5 gap-1.5 p-1.5">
             {navItems.map((item) => {
               const Icon = item.icon;
@@ -1413,7 +1770,7 @@ export default function Home() {
                   key={item.id}
                   aria-current={active ? "page" : undefined}
                   className={cn("oneui-tabbar-item flex min-h-14 min-w-0 flex-col items-center justify-center gap-1 font-extrabold transition", active && "is-active")}
-                  onClick={() => setActiveView(item.id)}
+                  onClick={() => navigateTo(item.id)}
                   type="button"
                 >
                   <span className="oneui-tabbar-icon">
@@ -1424,9 +1781,9 @@ export default function Home() {
               );
             })}
           </div>
-        </nav>
+        </nav>}
       </main>
-      <Toast.Root open={Boolean(toast)} onOpenChange={(open) => !open && setToast("")} duration={3200} className="fixed bottom-24 right-4 left-4 z-50 mx-auto max-w-md rounded-lg bg-[var(--foreground)] px-4 py-3 text-sm font-bold text-[var(--background)] shadow-xl">
+      <Toast.Root open={Boolean(toast)} onOpenChange={(open) => !open && setToast("")} duration={3200} className={cn("fixed right-4 left-4 z-50 mx-auto max-w-md rounded-lg bg-[var(--foreground)] px-4 py-3 text-sm font-bold text-[var(--background)] shadow-xl", activeView === "assetHistory" ? "bottom-4" : "bottom-24")}>
         <Toast.Title>{toast}</Toast.Title>
       </Toast.Root>
       <Toast.Viewport />
@@ -1446,16 +1803,20 @@ function PageTitle({ title, subtitle }: { title: string; subtitle: string }) {
 function HoldingCard({
   holding,
   expanded,
+  history,
   onEdit,
+  onOpenHistory,
   onRemove,
 }: {
   expanded?: boolean;
+  history?: AssetHistoryPoint[];
   holding: ReturnType<typeof computePortfolio>["holdings"][number];
   onEdit: (assetId: string) => void;
+  onOpenHistory?: (assetId: string) => void;
   onRemove: (assetId: string) => void;
 }) {
   const Icon = categoryIcons[holding.asset.category];
-  const profitTone = holding.unrealizedProfit >= 0 ? "text-emerald-700" : "text-red-700";
+  const profitTone = holding.totalProfit >= 0 ? "text-emerald-700" : "text-red-700";
   if (!expanded) {
     return (
       <Card className="p-3">
@@ -1469,7 +1830,7 @@ function HoldingCard({
                 {categoryLabels[holding.asset.category]} · {formatNumber(holding.quantity)} {holding.asset.unit}
               </p>
             </div>
-          <p className={cn("shrink-0 text-left text-sm font-black", profitTone)}>{formatPercent(holding.unrealizedPercent)}</p>
+          <p className={cn("shrink-0 text-left text-sm font-black", profitTone)}>{formatPercent(holding.totalProfitPercent)}</p>
         </div>
       </Card>
     );
@@ -1496,11 +1857,25 @@ function HoldingCard({
         <div className="min-w-0">
           <p className="text-xs text-[var(--muted-foreground)]">میزان سود تا امروز</p>
           <div className={cn("mt-1 flex items-baseline justify-between gap-3", profitTone)}>
-            <span className="money-value font-bold">{formatToman(holding.unrealizedProfit)}</span>
-            <span className="shrink-0 text-sm font-extrabold">{formatPercent(holding.unrealizedPercent)}</span>
+            <span className="money-value font-bold">{formatToman(holding.totalProfit)}</span>
+            <span className="shrink-0 text-sm font-extrabold">{formatPercent(holding.totalProfitPercent)}</span>
           </div>
         </div>
       </div>
+      {history && (
+        <button
+          aria-label={`نمایش تاریخچه ${holding.asset.name}`}
+          className="mt-4 block w-full rounded-lg border border-[var(--border)] bg-[var(--background)] px-2 py-2 text-start"
+          onClick={() => onOpenHistory?.(holding.asset.id)}
+          type="button"
+        >
+          <div className="mb-1 flex items-center justify-between gap-3 px-1">
+            <span className="text-xs font-bold text-[var(--muted-foreground)]">۳۰ روز اخیر</span>
+            <span className="text-xs font-extrabold text-[var(--primary)]">جزئیات</span>
+          </div>
+          <MiniProfitChart points={history} />
+        </button>
+      )}
       <div className="mt-4 border-t border-[var(--border)] pt-3">
         <div className="grid grid-cols-2 gap-2 min-[430px]:flex min-[430px]:justify-end">
           <Button variant="secondary" className="min-h-9 px-3" onClick={() => onEdit(holding.asset.id)}>
@@ -1513,5 +1888,143 @@ function HoldingCard({
         </div>
       </div>
     </Card>
+  );
+}
+
+function AssetHistoryPage({
+  assetName,
+  chartMode,
+  from,
+  holding,
+  onBack,
+  onChartModeChange,
+  onCustomFromChange,
+  onCustomToChange,
+  onRangeChange,
+  points,
+  range,
+  to,
+}: {
+  assetName: string;
+  chartMode: HistoryChartMode;
+  from: string;
+  holding: ReturnType<typeof computePortfolio>["holdings"][number];
+  onBack: () => void;
+  onChartModeChange: (mode: HistoryChartMode) => void;
+  onCustomFromChange: (date: string) => void;
+  onCustomToChange: (date: string) => void;
+  onRangeChange: (range: HistoryRange) => void;
+  points: AssetHistoryPoint[];
+  range: HistoryRange;
+  to: string;
+}) {
+  const rangeItems: Array<{ label: string; value: HistoryRange }> = [
+    { label: "۷ روز", value: 7 },
+    { label: "۳۰ روز", value: 30 },
+    { label: "۹۰ روز", value: 90 },
+    { label: "دلخواه", value: "custom" },
+  ];
+  const modeItems: Array<{ label: string; value: HistoryChartMode }> = [
+    { label: "سود کل", value: "totalProfit" },
+    { label: "سود روزانه", value: "dailyProfit" },
+    { label: "ارزش", value: "currentValue" },
+  ];
+  const latestPoint = points.at(-1);
+
+  return (
+    <div className="fixed inset-0 z-40 overflow-y-auto bg-[var(--background)]">
+      <header className="sticky top-0 z-10 border-b border-[var(--border)] bg-[var(--background)]/94 backdrop-blur">
+        <div className="mx-auto flex max-w-3xl items-center justify-between gap-3 px-4 py-3">
+          <button
+            aria-label="بازگشت"
+            className="grid h-10 w-10 shrink-0 place-items-center rounded-lg border border-[var(--border)] bg-[var(--surface)]"
+            onClick={onBack}
+            type="button"
+          >
+            <IconArrow className="rotate-180" size={18} />
+          </button>
+          <div className="min-w-0 flex-1">
+            <h1 className="truncate text-lg font-black">{assetName}</h1>
+            <p className="text-xs text-[var(--muted-foreground)]">
+              {faDate(from)} تا {faDate(to)}
+            </p>
+          </div>
+        </div>
+      </header>
+
+      <div className="mx-auto grid max-w-3xl gap-4 px-4 py-4 pb-[calc(1rem+env(safe-area-inset-bottom))]">
+        <Card className="grid gap-3">
+          <div className="grid grid-cols-2 gap-3">
+            <Metric label="ارزش فعلی" value={formatToman(holding.currentValue)} />
+            <Metric label="سود/زیان کل" value={formatToman(holding.totalProfit)} tone={holding.totalProfit >= 0 ? "good" : "bad"} />
+          </div>
+          <div className="grid grid-cols-4 rounded-lg bg-[var(--muted)] p-1">
+            {rangeItems.map((item) => (
+              <button
+                key={String(item.value)}
+                className={cn("rounded-md px-2 py-2 text-xs font-extrabold", range === item.value ? "bg-[var(--surface)] text-[var(--primary)] shadow-sm" : "text-[var(--muted-foreground)]")}
+                onClick={() => onRangeChange(item.value)}
+                type="button"
+              >
+                {item.label}
+              </button>
+            ))}
+          </div>
+          {range === "custom" && (
+            <div className="grid grid-cols-2 gap-3">
+              <Field label="از تاریخ">
+                <PersianDatePicker value={from} onChange={onCustomFromChange} />
+              </Field>
+              <Field label="تا تاریخ">
+                <PersianDatePicker value={to} onChange={onCustomToChange} />
+              </Field>
+            </div>
+          )}
+          <div className="grid grid-cols-3 rounded-lg bg-[var(--muted)] p-1">
+            {modeItems.map((item) => (
+              <button
+                key={item.value}
+                className={cn("rounded-md px-2 py-2 text-xs font-extrabold", chartMode === item.value ? "bg-[var(--surface)] text-[var(--primary)] shadow-sm" : "text-[var(--muted-foreground)]")}
+                onClick={() => onChartModeChange(item.value)}
+                type="button"
+              >
+                {item.label}
+              </button>
+            ))}
+          </div>
+          <AssetHistoryChart mode={chartMode} points={points} />
+          <p className="text-xs leading-6 text-[var(--muted-foreground)]">
+            {latestPoint?.carried ? "آخرین روز با نرخ معتبر قبلی محاسبه شده است." : "روزهای بدون معامله با آخرین نرخ معتبر قبلی ادامه داده می‌شوند."}
+          </p>
+        </Card>
+
+        <section className="grid gap-2">
+          <h2 className="history-detail-heading text-base font-extrabold">جزئیات روزانه</h2>
+          {[...points].reverse().map((point) => {
+            const tone = point.dailyProfit === null || point.dailyProfit === 0 ? "text-[var(--muted-foreground)]" : point.dailyProfit > 0 ? "text-emerald-700" : "text-red-700";
+            return (
+              <Card key={point.date} className="p-3">
+                <div className="flex items-start justify-between gap-3">
+                  <div className="min-w-0">
+                    <p className="font-extrabold">{faDate(point.date)}</p>
+                    <p className="mt-1 text-xs text-[var(--muted-foreground)]">{priceSourceLabel(point)}</p>
+                  </div>
+                  <div className="shrink-0 text-left">
+                    <p className={cn("font-black", tone)}>{point.dailyProfit === null ? "نامشخص" : formatToman(point.dailyProfit)}</p>
+                    <p className="mt-1 text-xs text-[var(--muted-foreground)]">
+                      {point.dailyProfitPercent === null ? "درصد نامشخص" : formatPercent(point.dailyProfitPercent)}
+                    </p>
+                  </div>
+                </div>
+                <div className="mt-3 grid grid-cols-2 gap-3 text-sm">
+                  <Metric label="قیمت واحد" value={point.priceToman === null ? "بدون قیمت" : formatToman(point.priceToman)} />
+                  <Metric label="ارزش دارایی" value={point.currentValue === null ? "نامشخص" : formatToman(point.currentValue)} />
+                </div>
+              </Card>
+            );
+          })}
+        </section>
+      </div>
+    </div>
   );
 }

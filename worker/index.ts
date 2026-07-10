@@ -1,7 +1,7 @@
 /** Cloudflare Worker entry point for سرمایه من. */
 import { handleImageOptimization, DEFAULT_DEVICE_SIZES, DEFAULT_IMAGE_SIZES } from "vinext/server/image-optimization";
 import handler from "vinext/server/app-router-entry";
-import { fetchTgjuPrices } from "../app/lib/tgju";
+import { fetchTgjuPriceSync, type PriceSyncRequest } from "../app/lib/tgju";
 
 interface Env {
   ASSETS: Fetcher;
@@ -40,13 +40,14 @@ const worker = {
       }, allowedWidths);
     }
 
-    if (url.pathname === "/api/prices") {
-      if (request.method !== "GET") {
+    if (url.pathname === "/api/prices/sync") {
+      if (request.method !== "POST") {
         return Response.json({ error: "Method not allowed" }, { status: 405 });
       }
 
       try {
-        const result = await fetchTgjuPrices(fetch);
+        const body = (await request.json()) as PriceSyncRequest;
+        const result = await fetchTgjuPriceSync(body, fetch);
         return Response.json(result, {
           headers: {
             "cache-control": "no-store",
@@ -55,9 +56,8 @@ const worker = {
       } catch (error) {
         return Response.json(
           {
-            prices: [],
+            records: [],
             fetchedAt: new Date().toISOString(),
-            source: "tgju",
             errors: [error instanceof Error ? error.message : "خطای دریافت قیمت"],
           },
           { status: 502 },

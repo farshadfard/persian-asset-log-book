@@ -26,10 +26,13 @@ test("keeps the Persian app shell and metadata correct", async () => {
   assert.match(css, /\.edit-dialog/);
   assert.match(css, /\.edit-scroll/);
   assert.match(css, /\.edit-footer/);
-  assert.match(page, /indexedDB|serviceWorker|\/api\/prices|PersianDatePicker|jalaliToIso|formatPriceInput/);
+  assert.match(page, /dailyPrices|serviceWorker|\/api\/prices\/sync|PersianDatePicker|jalaliToIso|formatPriceInput/);
   assert.match(page, /قیمت واحد \(تومان\)/);
   assert.match(page, /کارمزد \(تومان\)/);
-  assert.match(page, /قیمت دستی \(تومان\)/);
+  assert.match(page, /ثبت قیمت روز/);
+  assert.match(page, /سود\/زیان امروز/);
+  assert.match(page, /جزئیات روزانه/);
+  assert.match(page, /بازگردانی قیمت TGJU/);
   assert.match(page, /حالت نمایش/);
   assert.match(page, /ویرایش دارایی/);
   assert.match(page, /قیمت کل در زمان خرید/);
@@ -38,7 +41,7 @@ test("keeps the Persian app shell and metadata correct", async () => {
   assert.doesNotMatch(page, /قیمت مبنا/);
   assert.doesNotMatch(page, /سرمایه باقی‌مانده/);
   assert.doesNotMatch(page, /سود محقق‌شده/);
-  assert.match(page, /inline-flex flex-row items-center gap-1/);
+  assert.match(page, /AssetHistoryChart|MiniProfitChart/);
   assert.match(manifest, /سرمایه من|Ø³Ø±Ù…Ø§ÛŒÙ‡ Ù…Ù†/);
   assert.match(sw, /CACHE_NAME/);
   assert.doesNotMatch(`${layout}\n${manifest}\n${sw}`, /https?:\/\//i);
