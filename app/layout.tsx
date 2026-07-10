@@ -6,9 +6,9 @@ export const metadata: Metadata = {
   description: "ثبت محلی دارایی‌ها، قیمت روز و سود سرمایه به تومان.",
   manifest: "/manifest.webmanifest",
   icons: {
-    icon: "/favicon.svg",
-    shortcut: "/favicon.svg",
-    apple: "/icon.svg",
+    icon: "/favicon-32.png",
+    shortcut: "/favicon-32.png",
+    apple: "/apple-touch-icon.png",
   },
 };
 

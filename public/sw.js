@@ -2,8 +2,10 @@ const CACHE_NAME = "asset-log-shell-v2";
 const APP_SHELL = [
   "/",
   "/manifest.webmanifest",
-  "/favicon.svg",
-  "/icon.svg",
+  "/favicon-32.png",
+  "/apple-touch-icon.png",
+  "/icon-192.png",
+  "/icon-512.png",
   "/fonts/estedad-arabic.woff2",
   "/fonts/estedad-latin.woff2",
   "/onboarding-free.webp",
