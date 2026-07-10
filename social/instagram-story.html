@@ -1,0 +1,269 @@
+<!doctype html>
+<html lang="fa" dir="rtl">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=1080, initial-scale=1" />
+    <title>استوری سرمایه من</title>
+    <style>
+      @font-face {
+        font-family: Estedad;
+        src: url("../public/fonts/estedad-arabic.woff2") format("woff2");
+        font-weight: 100 900;
+        font-display: block;
+      }
+
+      * {
+        box-sizing: border-box;
+      }
+
+      html,
+      body {
+        width: 1080px;
+        height: 1920px;
+        margin: 0;
+        overflow: hidden;
+        background: #06110f;
+        font-family: Estedad, sans-serif;
+      }
+
+      .story {
+        position: relative;
+        width: 1080px;
+        height: 1920px;
+        overflow: hidden;
+        display: flex;
+        flex-direction: column;
+        align-items: center;
+        padding: 132px 78px 88px;
+        color: #f6fffb;
+        background: linear-gradient(180deg, #06110f 0%, #0b1b18 48%, #102f29 100%);
+      }
+
+      .orb {
+        position: absolute;
+        border-radius: 999px;
+        pointer-events: none;
+      }
+
+      .orb.left {
+        width: 710px;
+        height: 710px;
+        left: -280px;
+        top: 356px;
+        background: rgba(16, 72, 63, 0.72);
+      }
+
+      .orb.center {
+        width: 360px;
+        height: 360px;
+        top: 205px;
+        left: 360px;
+        background: rgba(39, 255, 215, 0.08);
+        box-shadow: 0 0 120px rgba(39, 255, 215, 0.14);
+      }
+
+      .orb.right {
+        width: 656px;
+        height: 656px;
+        right: -276px;
+        bottom: 120px;
+        background: rgba(22, 77, 76, 0.72);
+      }
+
+      .icon-wrap {
+        position: relative;
+        z-index: 1;
+        width: 216px;
+        height: 216px;
+        border-radius: 56px;
+        display: grid;
+        place-items: center;
+        background: #10221f;
+        border: 2px solid rgba(151, 255, 234, 0.28);
+        box-shadow: 0 34px 110px rgba(27, 255, 215, 0.18);
+      }
+
+      .icon-wrap img {
+        width: 150px;
+        height: 150px;
+        border-radius: 36px;
+      }
+
+      h1 {
+        position: relative;
+        z-index: 1;
+        margin: 70px 0 0;
+        font-size: 92px;
+        line-height: 1.08;
+        font-weight: 900;
+        letter-spacing: 0;
+      }
+
+      .subtitle {
+        position: relative;
+        z-index: 1;
+        margin-top: 18px;
+        color: #b6c9c2;
+        font-size: 40px;
+        font-weight: 500;
+      }
+
+      .panel {
+        position: relative;
+        z-index: 1;
+        width: 924px;
+        margin-top: 86px;
+        padding: 66px 48px 56px;
+        border-radius: 48px;
+        background: rgba(8, 24, 21, 0.86);
+        border: 2px solid rgba(136, 255, 231, 0.24);
+      }
+
+      .panel h2 {
+        margin: 0;
+        text-align: center;
+        font-size: 52px;
+        line-height: 1.35;
+        font-weight: 900;
+      }
+
+      .panel p {
+        margin: 22px 0 0;
+        text-align: center;
+        color: #b8fff0;
+        font-size: 37px;
+        line-height: 1.55;
+        font-weight: 500;
+      }
+
+      .chips {
+        display: flex;
+        gap: 21px;
+        margin-top: 58px;
+      }
+
+      .chip {
+        width: 282px;
+        height: 152px;
+        border-radius: 36px;
+        display: flex;
+        flex-direction: column;
+        align-items: center;
+        justify-content: center;
+        background: rgba(12, 38, 34, 0.86);
+        border: 2px solid rgba(104, 255, 222, 0.34);
+      }
+
+      .chip strong {
+        font-size: 34px;
+        line-height: 1.2;
+        font-weight: 900;
+      }
+
+      .chip span {
+        margin-top: 10px;
+        color: #9beedc;
+        font-size: 25px;
+        line-height: 1.2;
+        font-weight: 500;
+      }
+
+      .pitch {
+        position: relative;
+        z-index: 1;
+        margin-top: 92px;
+        text-align: center;
+      }
+
+      .pitch strong {
+        display: block;
+        font-size: 42px;
+        line-height: 1.45;
+        font-weight: 900;
+      }
+
+      .pitch span {
+        display: block;
+        margin-top: 20px;
+        color: #a9beb7;
+        font-size: 31px;
+        line-height: 1.55;
+        font-weight: 500;
+      }
+
+      .sticker {
+        position: relative;
+        z-index: 1;
+        width: 756px;
+        height: 150px;
+        margin-top: auto;
+        border-radius: 75px;
+        display: flex;
+        flex-direction: column;
+        align-items: center;
+        justify-content: center;
+        background: rgba(12, 37, 33, 0.92);
+        border: 4px dashed rgba(128, 255, 230, 0.78);
+      }
+
+      .sticker strong {
+        font-size: 35px;
+        line-height: 1.2;
+        font-weight: 900;
+      }
+
+      .sticker span {
+        direction: ltr;
+        margin-top: 10px;
+        color: #7cf7df;
+        font-size: 24px;
+        line-height: 1;
+        font-weight: 700;
+        letter-spacing: 1.5px;
+      }
+    </style>
+  </head>
+  <body>
+    <main class="story">
+      <div class="orb left"></div>
+      <div class="orb center"></div>
+      <div class="orb right"></div>
+
+      <div class="icon-wrap">
+        <img src="../public/icon-512.png" alt="" />
+      </div>
+
+      <h1>سرمایه من</h1>
+      <div class="subtitle">دفترچه دارایی</div>
+
+      <section class="panel">
+        <h2>دارایی‌ها را ثبت کن</h2>
+        <p>سود و زیان امروز را ببین</p>
+        <div class="chips">
+          <div class="chip">
+            <strong>محلی و امن</strong>
+            <span>روی دستگاه</span>
+          </div>
+          <div class="chip">
+            <strong>قیمت روز</strong>
+            <span>از TGJU</span>
+          </div>
+          <div class="chip">
+            <strong>رایگان</strong>
+            <span>متن‌باز</span>
+          </div>
+        </div>
+      </section>
+
+      <div class="pitch">
+        <strong>ساده، خصوصی، رایگان</strong>
+        <span>اطلاعات فقط روی دستگاه می‌ماند</span>
+      </div>
+
+      <div class="sticker">
+        <strong>جای استیکر لینک اینستاگرام</strong>
+        <span>URL STICKER</span>
+      </div>
+    </main>
+  </body>
+</html>
