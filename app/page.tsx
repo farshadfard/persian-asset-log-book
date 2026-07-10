@@ -213,20 +213,20 @@ const categoryIcons: Record<AssetCategory, ReturnType<typeof makeIcon>> = {
   crypto: IconWallet,
 };
 
-const onboardingItems: Array<{ description: string; imagePosition: string; title: string }> = [
+const onboardingItems: Array<{ description: string; imageSrc: string; title: string }> = [
   {
     description: "ثبت و پیگیری دارایی‌ها همیشه بدون پرداخت و اشتراک می‌ماند.",
-    imagePosition: "center top",
+    imageSrc: "/onboarding-free.png",
     title: "همیشه رایگان",
   },
   {
     description: "داده‌های مالی شما فقط روی همین مرورگر ذخیره می‌شود.",
-    imagePosition: "center center",
+    imageSrc: "/onboarding-privacy.png",
     title: "حریم خصوصی داده‌ها",
   },
   {
     description: "دارایی را سریع ثبت کنید و سود امروز را بی‌دردسر ببینید.",
-    imagePosition: "center bottom",
+    imageSrc: "/onboarding-easy.png",
     title: "استفاده آسان",
   },
 ];
@@ -1290,7 +1290,7 @@ export default function Home() {
                 <div
                   aria-hidden="true"
                   className="onboarding-image"
-                  style={{ backgroundPosition: onboardingItems[onboardingStep].imagePosition }}
+                  style={{ backgroundImage: `url("${onboardingItems[onboardingStep].imageSrc}")` }}
                 />
               </div>
               <div className="onboarding-copy">

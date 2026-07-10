@@ -189,9 +189,9 @@ svg {
   width: 100%;
   height: 100%;
   border-radius: 0.9rem;
-  background-image: url("/onboarding-sprite.png");
+  background-position: center;
   background-repeat: no-repeat;
-  background-size: 100% 300%;
+  background-size: cover;
 }
 
 .onboarding-copy {
