@@ -3,6 +3,9 @@ import { fetchTgjuPriceSync, type PriceSyncRequest } from "../app/lib/tgju";
 const PORT = Number(process.env.PORT ?? 5780);
 const HOST = process.env.HOST ?? "127.0.0.1";
 const API_PATH = "/sarmaye-man-api/prices/sync";
+const DEPLOY_TRIGGER_PATH = process.env.DEPLOY_TRIGGER_PATH ?? "";
+const DEPLOY_TRIGGER_TOKEN = process.env.DEPLOY_TRIGGER_TOKEN ?? "";
+const DEPLOY_TRIGGER_FILE = process.env.DEPLOY_TRIGGER_FILE ?? "";
 
 function jsonResponse(body: unknown, init: ResponseInit = {}) {
   const headers = new Headers(init.headers);
@@ -14,6 +17,19 @@ function jsonResponse(body: unknown, init: ResponseInit = {}) {
   return new Response(JSON.stringify(body), { ...init, headers });
 }
 
+function getBearerToken(request: Request) {
+  const authorization = request.headers.get("authorization") ?? "";
+  const [scheme, token] = authorization.split(" ");
+  if (scheme.toLowerCase() === "bearer" && token) return token;
+  return request.headers.get("x-deploy-token") ?? "";
+}
+
+async function triggerDeployPoll() {
+  if (!DEPLOY_TRIGGER_FILE) throw new Error("Deploy trigger file is not configured");
+  const { writeFile } = await import("node:fs/promises");
+  await writeFile(DEPLOY_TRIGGER_FILE, `${new Date().toISOString()}\n`, "utf8");
+}
+
 async function handleRequest(request: Request): Promise<Response> {
   const url = new URL(request.url);
 
@@ -23,6 +39,34 @@ async function handleRequest(request: Request): Promise<Response> {
 
   if (url.pathname === "/health" || url.pathname === "/sarmaye-man-api/health") {
     return jsonResponse({ ok: true, service: "sarmaye-man-tgju", time: new Date().toISOString() });
+  }
+
+  if (DEPLOY_TRIGGER_PATH && url.pathname === DEPLOY_TRIGGER_PATH) {
+    if (request.method !== "POST") {
+      return jsonResponse({ error: "Method not allowed" }, { status: 405 });
+    }
+
+    if (!DEPLOY_TRIGGER_TOKEN) {
+      return jsonResponse({ error: "Deploy trigger is disabled" }, { status: 503 });
+    }
+
+    if (getBearerToken(request) !== DEPLOY_TRIGGER_TOKEN) {
+      return jsonResponse({ error: "Unauthorized" }, { status: 401 });
+    }
+
+    try {
+      await triggerDeployPoll();
+      return jsonResponse({
+        ok: true,
+        triggered: true,
+        time: new Date().toISOString(),
+      }, { status: 202 });
+    } catch (error) {
+      return jsonResponse({
+        ok: false,
+        error: error instanceof Error ? error.message : "Deploy trigger failed",
+      }, { status: 502 });
+    }
   }
 
   if (url.pathname !== API_PATH) {
