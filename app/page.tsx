@@ -62,9 +62,10 @@ type BeforeInstallPromptEvent = Event & {
 const NEW_ASSET_VALUE = "__new_asset__";
 const APP_NAME = "سرمایه من";
 const APP_NAME_QUOTED = `«${APP_NAME}»`;
-const APP_VERSION = "0.1.0";
+const APP_VERSION = import.meta.env.VITE_APP_VERSION ?? "0.1.0";
 const GITHUB_REPO_URL = "https://github.com/farshadfard/sarmaye-man";
 const PRICE_SYNC_ENDPOINT = import.meta.env.PROD ? "https://api.farshadfard.com/sarmaye-man-api/prices/sync" : "/api/prices/sync";
+const IS_NATIVE_ANDROID = import.meta.env.VITE_NATIVE_ANDROID === "1";
 const SUPPORT_EMAIL = "info@fdanaeefard.com";
 const themeOptions: Array<{ label: string; value: ThemePreference }> = [
   { label: "خودکار", value: "auto" },
@@ -720,7 +721,7 @@ export default function Home() {
   const [installGuideOpen, setInstallGuideOpen] = useState(false);
   const [aboutOpen, setAboutOpen] = useState(false);
   const [installPromptEvent, setInstallPromptEvent] = useState<BeforeInstallPromptEvent | null>(null);
-  const [appDisplayMode, setAppDisplayMode] = useState<"browser" | "installed">(() => getAppDisplayMode());
+  const [appDisplayMode, setAppDisplayMode] = useState<"browser" | "installed">(() => (IS_NATIVE_ANDROID ? "installed" : getAppDisplayMode()));
   const [installPlatform] = useState<InstallPlatform>(() => getInstallPlatform());
   const fileInputRef = useRef<HTMLInputElement | null>(null);
   const autoRefreshStartedRef = useRef(false);
@@ -769,7 +770,7 @@ export default function Home() {
   const autoUpdatePrices = getBooleanSetting(snapshot.settings.autoUpdatePrices, true);
   const onboardingSeen = getBooleanSetting(snapshot.settings.onboardingSeen);
   const installPromptSeen = getBooleanSetting(snapshot.settings.installPromptSeen);
-  const showFirstRunInstallGuide = loaded && !installPromptSeen && appDisplayMode === "browser";
+  const showFirstRunInstallGuide = loaded && !IS_NATIVE_ANDROID && !installPromptSeen && appDisplayMode === "browser";
   const latestOnlineUpdate = [...snapshot.dailyPrices]
     .filter((price) => price.status === "quoted")
     .sort((a, b) => b.fetchedAt.localeCompare(a.fetchedAt))[0]?.fetchedAt;
@@ -812,7 +813,7 @@ export default function Home() {
       .finally(() => setLoaded(true));
 
     if ("serviceWorker" in navigator) {
-      if (import.meta.env.PROD) {
+      if (import.meta.env.PROD && !IS_NATIVE_ANDROID) {
         navigator.serviceWorker.register("/sw.js").catch(() => undefined);
       } else {
         navigator.serviceWorker.getRegistrations().then((registrations) => registrations.forEach((registration) => registration.unregister())).catch(() => undefined);
@@ -824,6 +825,9 @@ export default function Home() {
   }, []);
 
   useEffect(() => {
+    if (IS_NATIVE_ANDROID) {
+      return;
+    }
     const media = window.matchMedia("(display-mode: standalone)");
     const updateDisplayMode = () => setAppDisplayMode(getAppDisplayMode());
     const handleBeforeInstallPrompt = (event: Event) => {

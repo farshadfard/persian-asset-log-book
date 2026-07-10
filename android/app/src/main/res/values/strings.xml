@@ -1,0 +1,7 @@
+<?xml version='1.0' encoding='utf-8'?>
+<resources>
+    <string name="app_name">سرمایه من</string>
+    <string name="title_activity_main">سرمایه من</string>
+    <string name="package_name">com.farshadfard.sarmayeman</string>
+    <string name="custom_url_scheme">com.farshadfard.sarmayeman</string>
+</resources>
