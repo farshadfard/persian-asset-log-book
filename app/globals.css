@@ -165,7 +165,7 @@ svg {
 }
 
 .app-content.is-locked {
-  height: calc(100dvh - 4.25rem - 5.5rem - env(safe-area-inset-bottom));
+  height: calc(100dvh - 4.25rem);
   min-height: 0;
   overflow: hidden;
 }
@@ -197,7 +197,7 @@ svg {
   align-content: start;
   gap: 0.75rem;
   overflow-y: auto;
-  padding-bottom: 0.75rem;
+  padding-bottom: calc(6.25rem + env(safe-area-inset-bottom));
   overscroll-behavior: contain;
   -webkit-overflow-scrolling: touch;
   touch-action: pan-y;
@@ -318,7 +318,11 @@ svg {
 }
 
 .oneui-tabbar::before {
-  content: none;
+  content: "";
+  position: absolute;
+  inset: -3.5rem 0 0;
+  z-index: -1;
+  background: linear-gradient(180deg, transparent 0%, var(--background) 78%);
 }
 
 .oneui-tabbar-shell {
