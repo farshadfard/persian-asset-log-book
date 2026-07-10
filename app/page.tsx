@@ -71,6 +71,7 @@ type IconName =
   | "chart"
   | "check"
   | "chevron"
+  | "chevronRight"
   | "coins"
   | "download"
   | "edit"
@@ -125,6 +126,7 @@ function Icon({ className, name, size = 18 }: IconProps) {
     ),
     check: <path {...common} d="m5 12 4 4L19 6" />,
     chevron: <path {...common} d="m6 9 6 6 6-6" />,
+    chevronRight: <path {...common} d="m9 18 6-6-6-6" />,
     coins: (
       <>
         <ellipse {...common} cx="12" cy="7" rx="6" ry="3" />
@@ -216,6 +218,7 @@ const IconBanknote = makeIcon("banknote");
 const IconBarChart = makeIcon("chart");
 const IconCheck = makeIcon("check");
 const IconChevronDown = makeIcon("chevron");
+const IconChevronRight = makeIcon("chevronRight");
 const IconCoins = makeIcon("coins");
 const IconDownload = makeIcon("download");
 const IconEdit = makeIcon("edit");
@@ -1876,7 +1879,10 @@ function HoldingCard({
         >
           <div className="mb-1 flex items-center justify-between gap-3 px-1">
             <span className="text-xs font-bold text-[var(--muted-foreground)]">۳۰ روز اخیر</span>
-            <span className="text-xs font-extrabold text-[var(--primary)]">جزئیات</span>
+            <span className="inline-flex items-center gap-1 text-xs font-extrabold text-[var(--primary)]">
+              جزئیات
+              <IconChevronRight size={13} />
+            </span>
           </div>
           <MiniProfitChart points={history} />
         </button>

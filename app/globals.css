@@ -165,7 +165,7 @@ svg {
 }
 
 .app-content.is-locked {
-  height: calc(100dvh - 4.25rem - 7rem - env(safe-area-inset-bottom));
+  height: calc(100dvh - 4.25rem - 5.5rem - env(safe-area-inset-bottom));
   min-height: 0;
   overflow: hidden;
 }
@@ -318,11 +318,7 @@ svg {
 }
 
 .oneui-tabbar::before {
-  content: "";
-  position: absolute;
-  inset: -3.5rem 0 0;
-  z-index: -1;
-  background: linear-gradient(180deg, transparent 0%, var(--background) 78%);
+  content: none;
 }
 
 .oneui-tabbar-shell {
