@@ -1,4 +1,5 @@
 import { fetchTgjuPriceSync, type PriceSyncRequest } from "../app/lib/tgju";
+import { createCachedPriceSync } from "./tgju-cache";
 
 const PORT = Number(process.env.PORT ?? 5780);
 const HOST = process.env.HOST ?? "127.0.0.1";
@@ -6,6 +7,7 @@ const API_PATH = "/sarmaye-man-api/prices/sync";
 const DEPLOY_TRIGGER_PATH = process.env.DEPLOY_TRIGGER_PATH ?? "";
 const DEPLOY_TRIGGER_TOKEN = process.env.DEPLOY_TRIGGER_TOKEN ?? "";
 const DEPLOY_TRIGGER_FILE = process.env.DEPLOY_TRIGGER_FILE ?? "";
+const cachedPriceSync = createCachedPriceSync(fetchTgjuPriceSync);
 
 function jsonResponse(body: unknown, init: ResponseInit = {}) {
   const headers = new Headers(init.headers);
@@ -79,7 +81,7 @@ async function handleRequest(request: Request): Promise<Response> {
 
   try {
     const body = (await request.json()) as PriceSyncRequest;
-    return jsonResponse(await fetchTgjuPriceSync(body, fetch));
+    return jsonResponse(await cachedPriceSync(body, fetch));
   } catch (error) {
     return jsonResponse(
       {

@@ -14,7 +14,7 @@
     "build:tgju-service": "esbuild server/tgju-service.ts --bundle --platform=node --target=node22 --format=esm --outfile=build/tgju-service.mjs",
     "android:sync": "cap sync android",
     "start": "vinext start",
-    "test": "npm run build && node --import tsx --test tests/rendered-html.test.mjs tests/portfolio.test.mjs tests/tgju.test.mjs",
+    "test": "npm run build && node --import tsx --test tests/rendered-html.test.mjs tests/portfolio.test.mjs tests/tgju.test.mjs tests/tgju-cache.test.mjs",
     "lint": "eslint . --ignore-pattern dist --ignore-pattern dist-android --ignore-pattern .next --ignore-pattern android/app/src/main/assets --ignore-pattern android/app/build"
   },
   "dependencies": {
