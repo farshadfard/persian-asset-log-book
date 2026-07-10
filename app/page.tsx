@@ -52,6 +52,11 @@ type View = "dashboard" | "assets" | "add" | "prices" | "settings" | "assetHisto
 type ThemePreference = "auto" | "light" | "dark";
 type HistoryRange = 7 | 30 | 90 | "custom";
 type PriceEditorState = { date: string; instrumentId: string };
+type InstallPlatform = "android" | "ios-safari" | "ios-other" | "desktop" | "other";
+type BeforeInstallPromptEvent = Event & {
+  prompt: () => Promise<void>;
+  userChoice: Promise<{ outcome: "accepted" | "dismissed"; platform: string }>;
+};
 const NEW_ASSET_VALUE = "__new_asset__";
 const themeOptions: Array<{ label: string; value: ThemePreference }> = [
   { label: "خودکار", value: "auto" },
@@ -80,6 +85,8 @@ type IconName =
   | "plus"
   | "refresh"
   | "settings"
+  | "share"
+  | "smartphone"
   | "upload"
   | "wallet"
   | "x";
@@ -175,6 +182,19 @@ function Icon({ className, name, size = 18 }: IconProps) {
         <path {...common} d="M12 2v3M12 19v3M4.9 4.9 7 7M17 17l2.1 2.1M2 12h3M19 12h3M4.9 19.1 7 17M17 7l2.1-2.1" />
       </>
     ),
+    share: (
+      <>
+        <path {...common} d="M12 16V4" />
+        <path {...common} d="m8 8 4-4 4 4" />
+        <path {...common} d="M5 12v7h14v-7" />
+      </>
+    ),
+    smartphone: (
+      <>
+        <rect {...common} x="7" y="2" width="10" height="20" rx="2" />
+        <path {...common} d="M11 18h2" />
+      </>
+    ),
     upload: (
       <>
         <path {...common} d="M12 20V10" />
@@ -227,6 +247,8 @@ const IconHome = makeIcon("home");
 const IconPlus = makeIcon("plus");
 const IconRefresh = makeIcon("refresh");
 const IconSettings = makeIcon("settings");
+const IconShare = makeIcon("share");
+const IconSmartphone = makeIcon("smartphone");
 const IconUpload = makeIcon("upload");
 const IconWallet = makeIcon("wallet");
 const IconX = makeIcon("x");
@@ -399,6 +421,29 @@ function getThemePreference(value: unknown): ThemePreference {
 
 function getBooleanSetting(value: unknown): boolean {
   return value === true;
+}
+
+function getAppDisplayMode() {
+  if (typeof window === "undefined") return "browser";
+  const navigatorWithStandalone = window.navigator as Navigator & { standalone?: boolean };
+  const standalone =
+    window.matchMedia("(display-mode: standalone)").matches ||
+    window.matchMedia("(display-mode: fullscreen)").matches ||
+    window.matchMedia("(display-mode: minimal-ui)").matches ||
+    navigatorWithStandalone.standalone === true;
+  return standalone ? "installed" : "browser";
+}
+
+function getInstallPlatform(): InstallPlatform {
+  if (typeof navigator === "undefined") return "other";
+  const ua = navigator.userAgent;
+  const isIos = /iPad|iPhone|iPod/.test(ua) || (navigator.platform === "MacIntel" && navigator.maxTouchPoints > 1);
+  const isSafari = /Safari/i.test(ua) && !/CriOS|FxiOS|EdgiOS|OPiOS/i.test(ua);
+  if (isIos && isSafari) return "ios-safari";
+  if (isIos) return "ios-other";
+  if (/Android/i.test(ua)) return "android";
+  if (/Windows|Macintosh|Linux/i.test(ua)) return "desktop";
+  return "other";
 }
 
 function formatPriceInput(value: string) {
@@ -640,6 +685,10 @@ export default function Home() {
   const [isAutoRefreshing, setIsAutoRefreshing] = useState(false);
   const [syncMessage, setSyncMessage] = useState("");
   const [onboardingStep, setOnboardingStep] = useState(0);
+  const [installGuideOpen, setInstallGuideOpen] = useState(false);
+  const [installPromptEvent, setInstallPromptEvent] = useState<BeforeInstallPromptEvent | null>(null);
+  const [appDisplayMode, setAppDisplayMode] = useState<"browser" | "installed">(() => getAppDisplayMode());
+  const [installPlatform] = useState<InstallPlatform>(() => getInstallPlatform());
   const fileInputRef = useRef<HTMLInputElement | null>(null);
   const autoRefreshStartedRef = useRef(false);
 
@@ -685,6 +734,8 @@ export default function Home() {
   const themePreference = getThemePreference(snapshot.settings.theme);
   const autoUpdatePrices = getBooleanSetting(snapshot.settings.autoUpdatePrices);
   const onboardingSeen = getBooleanSetting(snapshot.settings.onboardingSeen);
+  const installPromptSeen = getBooleanSetting(snapshot.settings.installPromptSeen);
+  const showFirstRunInstallGuide = loaded && !installPromptSeen && appDisplayMode === "browser";
   const latestOnlineUpdate = [...snapshot.dailyPrices]
     .filter((price) => price.status === "quoted")
     .sort((a, b) => b.fetchedAt.localeCompare(a.fetchedAt))[0]?.fetchedAt;
@@ -736,6 +787,36 @@ export default function Home() {
         }
       }
     }
+  }, []);
+
+  useEffect(() => {
+    const media = window.matchMedia("(display-mode: standalone)");
+    const updateDisplayMode = () => setAppDisplayMode(getAppDisplayMode());
+    const handleBeforeInstallPrompt = (event: Event) => {
+      event.preventDefault();
+      setInstallPromptEvent(event as BeforeInstallPromptEvent);
+    };
+    const handleAppInstalled = () => {
+      setInstallPromptEvent(null);
+      setAppDisplayMode("installed");
+      setSnapshot((current) => ({
+        ...current,
+        settings: {
+          ...current.settings,
+          installPromptSeen: true,
+        },
+      }));
+      showToast("برنامه نصب شد.");
+    };
+
+    media.addEventListener("change", updateDisplayMode);
+    window.addEventListener("beforeinstallprompt", handleBeforeInstallPrompt);
+    window.addEventListener("appinstalled", handleAppInstalled);
+    return () => {
+      media.removeEventListener("change", updateDisplayMode);
+      window.removeEventListener("beforeinstallprompt", handleBeforeInstallPrompt);
+      window.removeEventListener("appinstalled", handleAppInstalled);
+    };
   }, []);
 
   useEffect(() => {
@@ -818,6 +899,44 @@ export default function Home() {
       },
     }));
     setOnboardingStep(0);
+  }
+
+  function dismissInstallGuide() {
+    setInstallGuideOpen(false);
+    setSnapshot((current) => ({
+      ...current,
+      settings: {
+        ...current.settings,
+        installPromptSeen: true,
+      },
+    }));
+  }
+
+  async function promptAppInstall() {
+    if (!installPromptEvent) {
+      showToast("اگر دکمه نصب فعال نیست، از منوی مرورگر گزینه نصب برنامه را انتخاب کنید.");
+      return;
+    }
+    const promptEvent = installPromptEvent;
+    setInstallPromptEvent(null);
+    try {
+      await promptEvent.prompt();
+      const choice = await promptEvent.userChoice;
+      if (choice.outcome === "accepted") {
+        dismissInstallGuide();
+      } else {
+        setInstallGuideOpen(false);
+        setSnapshot((current) => ({
+          ...current,
+          settings: {
+            ...current.settings,
+            installPromptSeen: true,
+          },
+        }));
+      }
+    } catch {
+      showToast("نصب برنامه شروع نشد. از منوی مرورگر دوباره امتحان کنید.");
+    }
   }
 
   function openEditAsset(assetId: string) {
@@ -1529,15 +1648,25 @@ export default function Home() {
             <div>
               <p className="text-lg font-black">سرمایه من</p>
             </div>
-            <Button
-              aria-label="بروزرسانی قیمت‌ها"
-              className="h-10 min-h-10 px-3"
-              disabled={isRefreshing}
-              onClick={() => refreshPrices()}
-              variant="secondary"
-            >
-              <IconRefresh className={cn(isRefreshing && "animate-spin")} size={18} />
-            </Button>
+            <div className="flex items-center gap-2">
+              <Button
+                aria-label="راهنمای نصب برنامه"
+                className="h-10 min-h-10 px-3"
+                onClick={() => setInstallGuideOpen(true)}
+                variant="secondary"
+              >
+                <IconDownload size={18} />
+              </Button>
+              <Button
+                aria-label="بروزرسانی قیمت‌ها"
+                className="h-10 min-h-10 px-3"
+                disabled={isRefreshing}
+                onClick={() => refreshPrices()}
+                variant="secondary"
+              >
+                <IconRefresh className={cn(isRefreshing && "animate-spin")} size={18} />
+              </Button>
+            </div>
           </div>
         </header>}
 
@@ -1556,7 +1685,46 @@ export default function Home() {
         )}
 
         <Dialog.Root
-          open={loaded && !onboardingSeen}
+          open={showFirstRunInstallGuide}
+          onOpenChange={(open) => {
+            if (!open) dismissInstallGuide();
+          }}
+        >
+          <Dialog.Portal>
+            <Dialog.Overlay className="fixed inset-0 z-50 bg-black/55" />
+            <Dialog.Content className="install-guide-fullscreen fixed inset-0 z-50 overflow-y-auto bg-[var(--background)]">
+              <InstallGuideContent
+                canPromptInstall={Boolean(installPromptEvent)}
+                fullscreen
+                onDismiss={dismissInstallGuide}
+                onInstall={promptAppInstall}
+                platform={installPlatform}
+              />
+            </Dialog.Content>
+          </Dialog.Portal>
+        </Dialog.Root>
+
+        <Dialog.Root open={installGuideOpen} onOpenChange={setInstallGuideOpen}>
+          <Dialog.Portal>
+            <Dialog.Overlay className="fixed inset-0 z-50 bg-black/45" />
+            <Dialog.Content className="install-guide-dialog fixed z-50 overflow-hidden rounded-lg border border-[var(--border)] bg-[var(--surface)] shadow-2xl">
+              <div className="flex justify-end px-4 pt-4">
+                <Dialog.Close className="rounded-md p-1 hover:bg-[var(--muted)]">
+                  <IconX size={18} />
+                </Dialog.Close>
+              </div>
+              <InstallGuideContent
+                canPromptInstall={Boolean(installPromptEvent)}
+                onDismiss={() => setInstallGuideOpen(false)}
+                onInstall={promptAppInstall}
+                platform={installPlatform}
+              />
+            </Dialog.Content>
+          </Dialog.Portal>
+        </Dialog.Root>
+
+        <Dialog.Root
+          open={loaded && !onboardingSeen && !showFirstRunInstallGuide}
           onOpenChange={(open) => {
             if (!open) completeOnboarding();
           }}
@@ -1804,6 +1972,97 @@ function PageTitle({ title, subtitle }: { title: string; subtitle: string }) {
     <div>
       <h1 className="text-2xl font-black">{title}</h1>
       <p className="mt-1 text-sm text-[var(--muted-foreground)]">{subtitle}</p>
+    </div>
+  );
+}
+
+function InstallGuideContent({
+  canPromptInstall,
+  fullscreen,
+  onDismiss,
+  onInstall,
+  platform,
+}: {
+  canPromptInstall: boolean;
+  fullscreen?: boolean;
+  onDismiss: () => void;
+  onInstall: () => void;
+  platform: InstallPlatform;
+}) {
+  const isAndroid = platform === "android";
+  const isIosSafari = platform === "ios-safari";
+  const isIosOther = platform === "ios-other";
+  const steps = isIosSafari
+    ? [
+        { icon: IconShare, title: "دکمه Share را بزنید", description: "در Safari، دکمه اشتراک‌گذاری را از پایین صفحه انتخاب کنید." },
+        { icon: IconPlus, title: "Add to Home Screen", description: "گزینه Add to Home Screen یا افزودن به صفحه اصلی را انتخاب کنید." },
+        { icon: IconHome, title: "Add را تأیید کنید", description: "بعد از تأیید، آیکن سرمایه من کنار بقیه برنامه‌ها قرار می‌گیرد." },
+      ]
+    : isIosOther
+      ? [
+          { icon: IconSmartphone, title: "با Safari باز کنید", description: "برای نصب روی iPhone، لینک برنامه را در Safari باز کنید." },
+          { icon: IconShare, title: "Share را بزنید", description: "بعد از باز شدن در Safari، دکمه اشتراک‌گذاری را انتخاب کنید." },
+          { icon: IconHome, title: "افزودن به صفحه اصلی", description: "Add to Home Screen را بزنید تا مثل اپ اجرا شود." },
+        ]
+      : isAndroid
+        ? [
+            { icon: IconDownload, title: "نصب برنامه", description: "دکمه نصب را بزنید تا پیام نصب Chrome نمایش داده شود." },
+            { icon: IconCheck, title: "تأیید در Chrome", description: "در پنجره Chrome، نصب را تأیید کنید." },
+            { icon: IconHome, title: "ورود از آیکن", description: "بعد از نصب، برنامه را از آیکن سرمایه من باز کنید." },
+          ]
+        : [
+            { icon: IconDownload, title: "گزینه نصب", description: "از نوار آدرس یا منوی مرورگر، گزینه نصب برنامه را انتخاب کنید." },
+            { icon: IconCheck, title: "تأیید نصب", description: "در پنجره مرورگر، نصب را تأیید کنید." },
+            { icon: IconSmartphone, title: "استفاده راحت‌تر", description: "بعد از نصب، برنامه بدون نوار مرورگر باز می‌شود." },
+          ];
+
+  return (
+    <div className={cn("install-guide-content", fullscreen && "is-fullscreen")}>
+      <div className="install-guide-hero">
+        <div className="install-guide-phone">
+          <IconSmartphone size={54} />
+        </div>
+        <div>
+          <Dialog.Title className="text-2xl font-black">نصب سرمایه من</Dialog.Title>
+          <Dialog.Description className="mt-3 text-sm leading-7 text-[var(--muted-foreground)]">
+            برای تجربه بهتر و راحتی در استفاده، اپلیکیشن را روی گوشی خود نصب کنید
+          </Dialog.Description>
+        </div>
+      </div>
+
+      <div className="install-steps">
+        {steps.map((step) => {
+          const Icon = step.icon;
+          return (
+            <div className="install-step" key={step.title}>
+              <div className="install-step-icon">
+                <Icon size={22} />
+              </div>
+              <div className="min-w-0">
+                <p className="font-extrabold">{step.title}</p>
+                <p className="mt-1 text-xs leading-6 text-[var(--muted-foreground)]">{step.description}</p>
+              </div>
+            </div>
+          );
+        })}
+      </div>
+
+      <div className="install-guide-actions">
+        {isAndroid && (
+          <Button className="w-full" disabled={!canPromptInstall} onClick={onInstall} type="button">
+            <IconDownload size={18} />
+            نصب برنامه
+          </Button>
+        )}
+        {isAndroid && !canPromptInstall && (
+          <p className="text-center text-xs leading-6 text-[var(--muted-foreground)]">
+            اگر دکمه نصب فعال نیست، کمی صبر کنید یا از منوی Chrome گزینه Install app را انتخاب کنید.
+          </p>
+        )}
+        <Button className="w-full" onClick={onDismiss} type="button" variant={isAndroid ? "secondary" : "primary"}>
+          {fullscreen ? "بعداً" : "بستن"}
+        </Button>
+      </div>
     </div>
   );
 }

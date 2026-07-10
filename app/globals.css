@@ -313,6 +313,91 @@ svg {
   background: var(--primary);
 }
 
+.install-guide-fullscreen {
+  display: grid;
+  place-items: center;
+  padding: max(1.25rem, env(safe-area-inset-top)) 1rem max(1.25rem, env(safe-area-inset-bottom));
+}
+
+.install-guide-dialog {
+  left: 50%;
+  top: 50%;
+  width: min(27rem, calc(100vw - 1.5rem));
+  max-height: calc(100dvh - 2rem);
+  transform: translate(-50%, -50%);
+}
+
+.install-guide-content {
+  display: flex;
+  min-height: 0;
+  flex-direction: column;
+  gap: 1rem;
+  padding: 0 1.25rem 1.25rem;
+}
+
+.install-guide-content.is-fullscreen {
+  width: min(27rem, 100%);
+  min-height: min(46rem, calc(100dvh - 2.5rem));
+  justify-content: center;
+  border: 1px solid var(--border);
+  border-radius: 1rem;
+  background: var(--surface);
+  padding: 1.25rem;
+  box-shadow: 0 26px 60px rgba(15, 33, 29, 0.18);
+}
+
+.install-guide-hero {
+  display: grid;
+  gap: 1rem;
+  text-align: center;
+}
+
+.install-guide-phone {
+  display: grid;
+  width: 6.75rem;
+  height: 6.75rem;
+  place-items: center;
+  justify-self: center;
+  border-radius: 2rem;
+  border: 1px solid color-mix(in srgb, var(--primary) 32%, transparent);
+  background:
+    radial-gradient(circle at 35% 20%, color-mix(in srgb, var(--primary) 34%, transparent), transparent 58%),
+    var(--primary-soft);
+  color: var(--primary);
+}
+
+.install-steps {
+  display: grid;
+  gap: 0.75rem;
+}
+
+.install-step {
+  display: grid;
+  grid-template-columns: 2.75rem minmax(0, 1fr);
+  gap: 0.75rem;
+  align-items: start;
+  border: 1px solid var(--border);
+  border-radius: 0.75rem;
+  background: var(--background);
+  padding: 0.75rem;
+}
+
+.install-step-icon {
+  display: grid;
+  width: 2.75rem;
+  height: 2.75rem;
+  place-items: center;
+  border-radius: 0.75rem;
+  background: var(--primary-soft);
+  color: var(--primary);
+}
+
+.install-guide-actions {
+  display: grid;
+  gap: 0.75rem;
+  padding-top: 0.25rem;
+}
+
 .oneui-tabbar {
   pointer-events: none;
 }
