@@ -64,6 +64,7 @@ const APP_NAME = "سرمایه من";
 const APP_NAME_QUOTED = `«${APP_NAME}»`;
 const APP_VERSION = "0.1.0";
 const GITHUB_REPO_URL = "https://github.com/farshadfard/sarmaye-man";
+const PRICE_SYNC_ENDPOINT = import.meta.env.PROD ? "https://zagrosslab.ir/sarmaye-man-api/prices/sync" : "/api/prices/sync";
 const SUPPORT_EMAIL = "info@fdanaeefard.com";
 const themeOptions: Array<{ label: string; value: ThemePreference }> = [
   { label: "خودکار", value: "auto" },
@@ -1022,7 +1023,7 @@ export default function Home() {
     const controller = new AbortController();
     const timeoutId = window.setTimeout(() => controller.abort(), 60_000);
     try {
-      const response = await fetch("/api/prices/sync", {
+      const response = await fetch(PRICE_SYNC_ENDPOINT, {
         method: "POST",
         headers: { accept: "application/json", "content-type": "application/json" },
         body: JSON.stringify({

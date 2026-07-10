@@ -10,6 +10,7 @@
   "scripts": {
     "dev": "vinext dev",
     "build": "vinext build",
+    "build:tgju-service": "esbuild server/tgju-service.ts --bundle --platform=node --target=node22 --format=esm --outfile=build/tgju-service.mjs",
     "start": "vinext start",
     "test": "npm run build && node --import tsx --test tests/rendered-html.test.mjs tests/portfolio.test.mjs tests/tgju.test.mjs",
     "lint": "eslint . --ignore-pattern dist --ignore-pattern .next"
