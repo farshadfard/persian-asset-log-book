@@ -24,7 +24,8 @@ The only intentional network price source is TGJU, called through `/api/prices`.
 
 - Framework: React + TypeScript on Vinext/Vite.
 - UI: Tailwind CSS with local shadcn-style components and Radix primitives where needed.
-- Runtime target: Cloudflare Worker.
+- Runtime target: Vinext production server behind nginx.
+- Price API: standalone Node.js TGJU service, typically served behind a separate API domain.
 - Persistence: IndexedDB stores `assets`, `transactions`, `priceCache`, `manualPrices`, and `settings`.
 - PWA: local manifest, local SVG icons, service worker, offline app shell.
 - Assets: optimized onboarding WebP images and SVG icons are bundled locally.

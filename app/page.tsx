@@ -64,7 +64,7 @@ const APP_NAME = "سرمایه من";
 const APP_NAME_QUOTED = `«${APP_NAME}»`;
 const APP_VERSION = "0.1.0";
 const GITHUB_REPO_URL = "https://github.com/farshadfard/sarmaye-man";
-const PRICE_SYNC_ENDPOINT = import.meta.env.PROD ? "https://zagrosslab.ir/sarmaye-man-api/prices/sync" : "/api/prices/sync";
+const PRICE_SYNC_ENDPOINT = import.meta.env.PROD ? "https://api.farshadfard.com/sarmaye-man-api/prices/sync" : "/api/prices/sync";
 const SUPPORT_EMAIL = "info@fdanaeefard.com";
 const themeOptions: Array<{ label: string; value: ThemePreference }> = [
   { label: "خودکار", value: "auto" },
