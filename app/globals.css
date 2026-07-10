@@ -189,9 +189,10 @@ svg {
   width: 100%;
   height: 100%;
   border-radius: 0.9rem;
+  background-color: color-mix(in srgb, var(--primary-soft) 45%, var(--surface));
   background-position: center;
   background-repeat: no-repeat;
-  background-size: cover;
+  background-size: contain;
 }
 
 .onboarding-copy {
