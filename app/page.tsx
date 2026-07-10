@@ -58,6 +58,11 @@ type BeforeInstallPromptEvent = Event & {
   userChoice: Promise<{ outcome: "accepted" | "dismissed"; platform: string }>;
 };
 const NEW_ASSET_VALUE = "__new_asset__";
+const APP_NAME = "سرمایه من";
+const APP_NAME_QUOTED = `«${APP_NAME}»`;
+const APP_VERSION = "0.1.0";
+const GITHUB_REPO_URL = "https://github.com/farshadfard/persian-asset-log-book";
+const SUPPORT_EMAIL = "info@fdanaeefard.com";
 const themeOptions: Array<{ label: string; value: ThemePreference }> = [
   { label: "خودکار", value: "auto" },
   { label: "روشن", value: "light" },
@@ -419,8 +424,8 @@ function getThemePreference(value: unknown): ThemePreference {
   return value === "light" || value === "dark" || value === "auto" ? value : "auto";
 }
 
-function getBooleanSetting(value: unknown): boolean {
-  return value === true;
+function getBooleanSetting(value: unknown, defaultValue = false): boolean {
+  return typeof value === "boolean" ? value : defaultValue;
 }
 
 function getAppDisplayMode() {
@@ -430,6 +435,8 @@ function getAppDisplayMode() {
     window.matchMedia("(display-mode: standalone)").matches ||
     window.matchMedia("(display-mode: fullscreen)").matches ||
     window.matchMedia("(display-mode: minimal-ui)").matches ||
+    window.matchMedia("(display-mode: window-controls-overlay)").matches ||
+    document.referrer.startsWith("android-app://") ||
     navigatorWithStandalone.standalone === true;
   return standalone ? "installed" : "browser";
 }
@@ -686,6 +693,7 @@ export default function Home() {
   const [syncMessage, setSyncMessage] = useState("");
   const [onboardingStep, setOnboardingStep] = useState(0);
   const [installGuideOpen, setInstallGuideOpen] = useState(false);
+  const [aboutOpen, setAboutOpen] = useState(false);
   const [installPromptEvent, setInstallPromptEvent] = useState<BeforeInstallPromptEvent | null>(null);
   const [appDisplayMode, setAppDisplayMode] = useState<"browser" | "installed">(() => getAppDisplayMode());
   const [installPlatform] = useState<InstallPlatform>(() => getInstallPlatform());
@@ -732,7 +740,7 @@ export default function Home() {
   const filteredInstruments = instruments.filter((instrument) => instrument.category === category);
   const filteredEditInstruments = instruments.filter((instrument) => instrument.category === editCategory);
   const themePreference = getThemePreference(snapshot.settings.theme);
-  const autoUpdatePrices = getBooleanSetting(snapshot.settings.autoUpdatePrices);
+  const autoUpdatePrices = getBooleanSetting(snapshot.settings.autoUpdatePrices, true);
   const onboardingSeen = getBooleanSetting(snapshot.settings.onboardingSeen);
   const installPromptSeen = getBooleanSetting(snapshot.settings.installPromptSeen);
   const showFirstRunInstallGuide = loaded && !installPromptSeen && appDisplayMode === "browser";
@@ -1611,14 +1619,22 @@ export default function Home() {
             </div>
           </Card>
           <Card className="grid gap-3">
-            <Button variant="secondary" onClick={downloadBackup}>
-              <IconDownload size={18} />
-              خروجی JSON
-            </Button>
-            <Button variant="secondary" onClick={() => fileInputRef.current?.click()}>
-              <IconUpload size={18} />
-              ورود بکاپ
-            </Button>
+            <div>
+              <h2 className="font-extrabold">مدیریت اطلاعات</h2>
+              <p className="mt-1 text-xs leading-6 text-[var(--muted-foreground)]">
+                برای قیمت زنده فقط درخواست به TGJU ارسال می‌شود و اطلاعات دارایی شما از دستگاه خارج نمی‌شود.
+              </p>
+            </div>
+            <div className="grid grid-cols-2 gap-2">
+              <Button className="px-2" variant="secondary" onClick={downloadBackup}>
+                <IconDownload size={18} />
+                پشتیبان‌گیری
+              </Button>
+              <Button className="px-2" variant="secondary" onClick={() => fileInputRef.current?.click()}>
+                <IconUpload size={18} />
+                بازگردانی اطلاعات
+              </Button>
+            </div>
             <input
               ref={fileInputRef}
               className="hidden"
@@ -1631,10 +1647,17 @@ export default function Home() {
               }}
             />
           </Card>
-          <Card className="grid gap-2 text-sm text-[var(--muted-foreground)]">
-            <p>ذخیره اصلی با IndexedDB انجام می‌شود.</p>
-            <p>برای قیمت زنده فقط درخواست به TGJU ارسال می‌شود و اطلاعات دارایی شما از دستگاه خارج نمی‌شود.</p>
+          <Card className="grid gap-3">
+            <div>
+              <h2 className="font-extrabold">درباره</h2>
+              <p className="mt-1 text-xs text-[var(--muted-foreground)]">اطلاعات برنامه و راه‌های ارتباطی</p>
+            </div>
+            <Button variant="secondary" onClick={() => setAboutOpen(true)}>
+              <IconSmartphone size={18} />
+              درباره {APP_NAME_QUOTED}
+            </Button>
           </Card>
+          <p className="pb-2 text-center text-xs text-[var(--muted-foreground)]">نسخه {APP_VERSION}</p>
         </div>
       )}
     </>
@@ -1646,17 +1669,19 @@ export default function Home() {
         {activeView !== "assetHistory" && <header className="sticky top-0 z-20 border-b border-[var(--border)] bg-[var(--background)]/92 backdrop-blur">
           <div className="mx-auto flex max-w-3xl items-center justify-between px-4 py-3">
             <div>
-              <p className="text-lg font-black">سرمایه من</p>
+              <p className="text-lg font-black">{APP_NAME_QUOTED}</p>
             </div>
             <div className="flex items-center gap-2">
-              <Button
-                aria-label="راهنمای نصب برنامه"
-                className="h-10 min-h-10 px-3"
-                onClick={() => setInstallGuideOpen(true)}
-                variant="secondary"
-              >
-                <IconDownload size={18} />
-              </Button>
+              {appDisplayMode === "browser" && (
+                <Button
+                  aria-label="راهنمای نصب برنامه"
+                  className="h-10 min-h-10 px-3"
+                  onClick={() => setInstallGuideOpen(true)}
+                  variant="secondary"
+                >
+                  <IconDownload size={18} />
+                </Button>
+              )}
               <Button
                 aria-label="بروزرسانی قیمت‌ها"
                 className="h-10 min-h-10 px-3"
@@ -1719,6 +1744,45 @@ export default function Home() {
                 onInstall={promptAppInstall}
                 platform={installPlatform}
               />
+            </Dialog.Content>
+          </Dialog.Portal>
+        </Dialog.Root>
+
+        <Dialog.Root open={aboutOpen} onOpenChange={setAboutOpen}>
+          <Dialog.Portal>
+            <Dialog.Overlay className="fixed inset-0 z-50 bg-black/45" />
+            <Dialog.Content className="price-dialog fixed z-50 overflow-hidden rounded-lg border border-[var(--border)] bg-[var(--surface)] p-4 shadow-2xl">
+              <div className="flex items-start justify-between gap-3">
+                <div className="min-w-0">
+                  <Dialog.Title className="text-lg font-extrabold">{APP_NAME_QUOTED}</Dialog.Title>
+                  <Dialog.Description className="mt-1 text-sm text-[var(--muted-foreground)]">
+                    نسخه {APP_VERSION}
+                  </Dialog.Description>
+                </div>
+                <Dialog.Close className="rounded-md p-1 hover:bg-[var(--muted)]">
+                  <IconX size={18} />
+                </Dialog.Close>
+              </div>
+              <div className="mt-4 grid gap-2">
+                <Button
+                  type="button"
+                  variant="secondary"
+                  onClick={() => window.open(GITHUB_REPO_URL, "_blank", "noopener,noreferrer")}
+                >
+                  <IconUpload size={18} />
+                  مخزن GitHub
+                </Button>
+                <Button
+                  type="button"
+                  variant="secondary"
+                  onClick={() => {
+                    window.location.href = `mailto:${SUPPORT_EMAIL}`;
+                  }}
+                >
+                  <IconDownload size={18} />
+                  ایمیل پشتیبانی
+                </Button>
+              </div>
             </Dialog.Content>
           </Dialog.Portal>
         </Dialog.Root>
@@ -1786,7 +1850,7 @@ export default function Home() {
                 </Dialog.Close>
               </div>
               <div className="mt-4 rounded-lg border border-red-200 bg-red-50 p-3 text-sm leading-6 text-red-800 dark:border-red-900/60 dark:bg-red-950/30 dark:text-red-200">
-                این عملیات قابل بازگشت نیست. اگر لازم دارید، قبل از حذف از بخش تنظیمات خروجی JSON بگیرید.
+                این عملیات قابل بازگشت نیست. اگر لازم دارید، قبل از حذف از بخش تنظیمات پشتیبان‌گیری کنید.
               </div>
               <div className="mt-4 grid grid-cols-2 gap-2 border-t border-[var(--border)] pt-3">
                 <Button type="button" variant="danger" onClick={confirmRemoveAsset}>
@@ -1996,7 +2060,7 @@ function InstallGuideContent({
     ? [
         { icon: IconShare, title: "دکمه Share را بزنید", description: "در Safari، دکمه اشتراک‌گذاری را از پایین صفحه انتخاب کنید." },
         { icon: IconPlus, title: "Add to Home Screen", description: "گزینه Add to Home Screen یا افزودن به صفحه اصلی را انتخاب کنید." },
-        { icon: IconHome, title: "Add را تأیید کنید", description: "بعد از تأیید، آیکن سرمایه من کنار بقیه برنامه‌ها قرار می‌گیرد." },
+        { icon: IconHome, title: "Add را تأیید کنید", description: `بعد از تأیید، آیکن ${APP_NAME_QUOTED} کنار بقیه برنامه‌ها قرار می‌گیرد.` },
       ]
     : isIosOther
       ? [
@@ -2006,9 +2070,9 @@ function InstallGuideContent({
         ]
       : isAndroid
         ? [
-            { icon: IconDownload, title: "نصب برنامه", description: "دکمه نصب را بزنید تا پیام نصب Chrome نمایش داده شود." },
-            { icon: IconCheck, title: "تأیید در Chrome", description: "در پنجره Chrome، نصب را تأیید کنید." },
-            { icon: IconHome, title: "ورود از آیکن", description: "بعد از نصب، برنامه را از آیکن سرمایه من باز کنید." },
+            { icon: IconDownload, title: "نصب برنامه", description: "دکمه نصب را بزنید تا پیام نصب نمایش داده شود." },
+            { icon: IconCheck, title: "تأیید نصب برنامه", description: "مراحل نصب را انجام دهید." },
+            { icon: IconHome, title: "ورود از منوی برنامه‌ها", description: `بعد از نصب، برنامه را از طریق آیکن ${APP_NAME_QUOTED} باز کنید.` },
           ]
         : [
             { icon: IconDownload, title: "گزینه نصب", description: "از نوار آدرس یا منوی مرورگر، گزینه نصب برنامه را انتخاب کنید." },
@@ -2019,11 +2083,9 @@ function InstallGuideContent({
   return (
     <div className={cn("install-guide-content", fullscreen && "is-fullscreen")}>
       <div className="install-guide-hero">
-        <div className="install-guide-phone">
-          <IconSmartphone size={54} />
-        </div>
+        <div aria-hidden="true" className="install-guide-app-icon" />
         <div>
-          <Dialog.Title className="text-2xl font-black">نصب سرمایه من</Dialog.Title>
+          <Dialog.Title className="text-2xl font-black">نصب {APP_NAME_QUOTED}</Dialog.Title>
           <Dialog.Description className="mt-3 text-sm leading-7 text-[var(--muted-foreground)]">
             برای تجربه بهتر و راحتی در استفاده، اپلیکیشن را روی گوشی خود نصب کنید
           </Dialog.Description>
@@ -2056,7 +2118,7 @@ function InstallGuideContent({
         )}
         {isAndroid && !canPromptInstall && (
           <p className="text-center text-xs leading-6 text-[var(--muted-foreground)]">
-            اگر دکمه نصب فعال نیست، کمی صبر کنید یا از منوی Chrome گزینه Install app را انتخاب کنید.
+            اگر دکمه نصب فعال نیست، کمی صبر کنید یا از منوی مرورگر گزینه Install app را انتخاب کنید.
           </p>
         )}
         <Button className="w-full" onClick={onDismiss} type="button" variant={isAndroid ? "secondary" : "primary"}>

@@ -352,7 +352,7 @@ svg {
   text-align: center;
 }
 
-.install-guide-phone {
+.install-guide-app-icon {
   display: grid;
   width: 6.75rem;
   height: 6.75rem;
@@ -361,6 +361,7 @@ svg {
   border-radius: 2rem;
   border: 1px solid color-mix(in srgb, var(--primary) 32%, transparent);
   background:
+    url("/icon-192.png") center / 4.75rem 4.75rem no-repeat,
     radial-gradient(circle at 35% 20%, color-mix(in srgb, var(--primary) 34%, transparent), transparent 58%),
     var(--primary-soft);
   color: var(--primary);
