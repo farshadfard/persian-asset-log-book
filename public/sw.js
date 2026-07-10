@@ -1,4 +1,4 @@
-const CACHE_NAME = "asset-log-shell-v2";
+const CACHE_NAME = "asset-log-shell-v3";
 const APP_SHELL = [
   "/",
   "/manifest.webmanifest",
@@ -6,6 +6,8 @@ const APP_SHELL = [
   "/apple-touch-icon.png",
   "/icon-192.png",
   "/icon-512.png",
+  "/icon-maskable-192.png",
+  "/icon-maskable-512.png",
   "/fonts/estedad-arabic.woff2",
   "/fonts/estedad-latin.woff2",
   "/onboarding-free.webp",
