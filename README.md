@@ -1,5 +1,7 @@
 # سرمایه من
 
+نسخه وب: [https://sarmayeman.farshadfard.com](https://sarmayeman.farshadfard.com)
+
 Persian, mobile-first, local-first PWA for recording personal assets and tracking current value and profit/loss in تومان.
 
 ## Features
