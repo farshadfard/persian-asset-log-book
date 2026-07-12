@@ -25,6 +25,7 @@ import {
   formatNumber,
   formatPercent,
   formatToman,
+  type HoldingSummary,
   instruments,
   mergeDailyPrices,
   parseLocalizedNumber,
@@ -52,6 +53,8 @@ const categoryLabels: Record<AssetCategory, string> = {
 type View = "dashboard" | "assets" | "add" | "prices" | "settings" | "assetHistory";
 type ThemePreference = "auto" | "light" | "dark";
 type HistoryRange = 7 | 30 | 90 | "custom";
+type AssetSortOption = "profit-desc" | "profit-asc" | "loss-desc" | "loss-asc" | "buy-date-desc" | "buy-date-asc" | "add-date-desc" | "add-date-asc";
+type AssetTypeFilter = AssetCategory | "all";
 type PriceEditorState = { date: string; instrumentId: string };
 type BackupConfirmationState = ImportedBackup & { fileName: string };
 type InstallPlatform = "android" | "ios-safari" | "ios-other" | "desktop" | "other";
@@ -77,9 +80,50 @@ const themeOptions: Array<{ label: string; value: ThemePreference }> = [
   { label: "روشن", value: "light" },
   { label: "تیره", value: "dark" },
 ];
+const assetSortOptions: Array<{ label: string; value: AssetSortOption }> = [
+  { value: "profit-desc", label: "سود: بیشترین به کمترین" },
+  { value: "profit-asc", label: "سود: کمترین به بیشترین" },
+  { value: "loss-desc", label: "ضرر: بیشترین به کمترین" },
+  { value: "loss-asc", label: "ضرر: کمترین به بیشترین" },
+  { value: "buy-date-desc", label: "تاریخ خرید: جدیدترین" },
+  { value: "buy-date-asc", label: "تاریخ خرید: قدیمی‌ترین" },
+  { value: "add-date-desc", label: "تاریخ ثبت: جدیدترین" },
+  { value: "add-date-asc", label: "تاریخ ثبت: قدیمی‌ترین" },
+];
 
 function cn(...classes: Array<string | false | null | undefined>) {
   return twMerge(classes.filter(Boolean).join(" "));
+}
+
+function compareNullableNumber(a: number | null, b: number | null, direction: "asc" | "desc") {
+  if (a === null && b === null) return 0;
+  if (a === null) return 1;
+  if (b === null) return -1;
+  return direction === "asc" ? a - b : b - a;
+}
+
+function sortHoldings(holdings: HoldingSummary[], sortBy: AssetSortOption, firstBuyByAsset: Map<string, string>) {
+  return [...holdings].sort((a, b) => {
+    let result = 0;
+    if (sortBy === "profit-desc") result = b.totalProfit - a.totalProfit;
+    if (sortBy === "profit-asc") result = a.totalProfit - b.totalProfit;
+    if (sortBy === "loss-desc" || sortBy === "loss-asc") {
+      const aLoss = a.totalProfit < 0 ? Math.abs(a.totalProfit) : null;
+      const bLoss = b.totalProfit < 0 ? Math.abs(b.totalProfit) : null;
+      result = compareNullableNumber(aLoss, bLoss, sortBy === "loss-asc" ? "asc" : "desc");
+    }
+    if (sortBy === "buy-date-desc" || sortBy === "buy-date-asc") {
+      const aDate = firstBuyByAsset.get(a.asset.id) ?? a.asset.createdAt;
+      const bDate = firstBuyByAsset.get(b.asset.id) ?? b.asset.createdAt;
+      result = sortBy === "buy-date-asc" ? aDate.localeCompare(bDate) : bDate.localeCompare(aDate);
+    }
+    if (sortBy === "add-date-desc" || sortBy === "add-date-asc") {
+      result = sortBy === "add-date-asc"
+        ? a.asset.createdAt.localeCompare(b.asset.createdAt)
+        : b.asset.createdAt.localeCompare(a.asset.createdAt);
+    }
+    return result || a.asset.name.localeCompare(b.asset.name, "fa") || a.asset.id.localeCompare(b.asset.id);
+  });
 }
 
 type IconName =
@@ -102,7 +146,9 @@ type IconName =
   | "refresh"
   | "settings"
   | "share"
+  | "sliders"
   | "smartphone"
+  | "trash"
   | "upload"
   | "wallet"
   | "x";
@@ -217,10 +263,26 @@ function Icon({ className, name, size = 18 }: IconProps) {
         <path {...common} d="M5 12v7h14v-7" />
       </>
     ),
+    sliders: (
+      <>
+        <path {...common} d="M4 7h10M18 7h2" />
+        <path {...common} d="M4 17h2M10 17h10" />
+        <circle {...common} cx="16" cy="7" r="2" />
+        <circle {...common} cx="8" cy="17" r="2" />
+      </>
+    ),
     smartphone: (
       <>
         <rect {...common} x="7" y="2" width="10" height="20" rx="2" />
         <path {...common} d="M11 18h2" />
+      </>
+    ),
+    trash: (
+      <>
+        <path {...common} d="M4 7h16" />
+        <path {...common} d="M10 11v6M14 11v6" />
+        <path {...common} d="M6 7l1 14h10l1-14" />
+        <path {...common} d="M9 7V4h6v3" />
       </>
     ),
     upload: (
@@ -278,7 +340,9 @@ const IconPlus = makeIcon("plus");
 const IconRefresh = makeIcon("refresh");
 const IconSettings = makeIcon("settings");
 const IconShare = makeIcon("share");
+const IconSliders = makeIcon("sliders");
 const IconSmartphone = makeIcon("smartphone");
+const IconTrash = makeIcon("trash");
 const IconUpload = makeIcon("upload");
 const IconWallet = makeIcon("wallet");
 const IconX = makeIcon("x");
@@ -761,6 +825,9 @@ export default function Home() {
   const [historyChartMode, setHistoryChartMode] = useState<HistoryChartMode>("totalProfit");
   const [historyClosing, setHistoryClosing] = useState(false);
   const [pendingAssetScrollId, setPendingAssetScrollId] = useState("");
+  const [assetSortBy, setAssetSortBy] = useState<AssetSortOption>("profit-desc");
+  const [assetTypeFilter, setAssetTypeFilter] = useState<AssetTypeFilter>("all");
+  const [assetSheetOpen, setAssetSheetOpen] = useState(false);
   const [pendingDeleteAssetId, setPendingDeleteAssetId] = useState("");
   const [pendingBackup, setPendingBackup] = useState<BackupConfirmationState | null>(null);
   const [editingAssetId, setEditingAssetId] = useState("");
@@ -778,21 +845,29 @@ export default function Home() {
 
   const today = localDateKey();
   const summary = useMemo(() => computePortfolio(snapshot, today), [snapshot, today]);
-  const dashboardHoldings = useMemo(() => {
-    const latestTransactionByAsset = new Map<string, string>();
+  const firstBuyByAsset = useMemo(() => {
+    const dates = new Map<string, string>();
     for (const transaction of snapshot.transactions) {
-      const current = latestTransactionByAsset.get(transaction.assetId);
-      if (!current || transaction.date > current) latestTransactionByAsset.set(transaction.assetId, transaction.date);
+      if (transaction.type !== "buy") continue;
+      const current = dates.get(transaction.assetId);
+      if (!current || transaction.date < current) dates.set(transaction.assetId, transaction.date);
     }
-
-    return [...summary.holdings]
-      .sort((a, b) => {
-        const bDate = latestTransactionByAsset.get(b.asset.id) ?? b.asset.createdAt;
-        const aDate = latestTransactionByAsset.get(a.asset.id) ?? a.asset.createdAt;
-        return bDate.localeCompare(aDate);
-      })
-      .slice(0, 4);
-  }, [snapshot.transactions, summary.holdings]);
+    return dates;
+  }, [snapshot.transactions]);
+  const dashboardHoldings = useMemo(() => {
+    return sortHoldings(summary.holdings, "profit-desc", firstBuyByAsset);
+  }, [firstBuyByAsset, summary.holdings]);
+  const filteredAssetHoldings = useMemo(() => {
+    const filtered = assetTypeFilter === "all"
+      ? summary.holdings
+      : summary.holdings.filter((holding) => holding.asset.category === assetTypeFilter);
+    return sortHoldings(filtered, assetSortBy, firstBuyByAsset);
+  }, [assetSortBy, assetTypeFilter, firstBuyByAsset, summary.holdings]);
+  const assetTypeCounts = useMemo(() => {
+    const counts = new Map<AssetCategory, number>();
+    for (const holding of summary.holdings) counts.set(holding.asset.category, (counts.get(holding.asset.category) ?? 0) + 1);
+    return counts;
+  }, [summary.holdings]);
   const todayPortfolioPoint = useMemo(() => computePortfolioHistory(snapshot, today, today)[0], [snapshot, today]);
   const filteredInstruments = instruments.filter((instrument) => instrument.category === category);
   const filteredEditInstruments = instruments.filter((instrument) => instrument.category === editCategory);
@@ -822,6 +897,8 @@ export default function Home() {
     .filter((transaction) => transaction.assetId === editingAssetId)
     .sort((a, b) => a.date.localeCompare(b.date))
     .find((transaction) => transaction.type === "buy");
+  const selectedAssetSortLabel = assetSortOptions.find((option) => option.value === assetSortBy)?.label ?? "سود: بیشترین به کمترین";
+  const selectedAssetTypeLabel = assetTypeFilter === "all" ? "همه نوع‌ها" : categoryLabels[assetTypeFilter];
   const navItems: Array<{ id: Exclude<View, "assetHistory">; label: string; icon: ReturnType<typeof makeIcon> }> = [
     { id: "dashboard", label: "داشبورد", icon: IconHome },
     { id: "assets", label: "دارایی‌ها", icon: IconBarChart },
@@ -1411,6 +1488,16 @@ export default function Home() {
         />
       )}
 
+      <AssetControlsSheet
+        assetTypeCounts={assetTypeCounts}
+        filterBy={assetTypeFilter}
+        onFilterChange={setAssetTypeFilter}
+        onOpenChange={setAssetSheetOpen}
+        onSortChange={setAssetSortBy}
+        open={assetSheetOpen}
+        sortBy={assetSortBy}
+      />
+
       {activeView === "dashboard" && (
         <div className="locked-view">
           <div className="locked-view-fixed">
@@ -1468,16 +1555,25 @@ export default function Home() {
       {activeView === "assets" && (
         <div className="locked-view">
           <div className="locked-view-fixed">
-            <div className="flex items-end justify-between gap-3">
-              <PageTitle title="دارایی‌ها" subtitle={`${formatNumber(summary.holdings.length, 0)} مورد ثبت‌شده`} />
-              <Button className="min-h-9 shrink-0 px-3 py-1.5" onClick={() => navigateTo("add")}>
-                <IconPlus size={16} />
-                افزودن دارایی
-              </Button>
+            <div className="flex flex-wrap items-end justify-between gap-3">
+              <PageTitle
+                title="دارایی‌ها"
+                subtitle={`${formatNumber(filteredAssetHoldings.length, 0)} از ${formatNumber(summary.holdings.length, 0)} مورد · ${selectedAssetSortLabel} · ${selectedAssetTypeLabel}`}
+              />
+              <div className="flex shrink-0 items-center gap-2">
+                <Button className="min-h-9 px-3 py-1.5" onClick={() => setAssetSheetOpen(true)} variant="secondary">
+                  <IconSliders size={16} />
+                  گزینه‌ها
+                </Button>
+                <Button className="min-h-9 px-3 py-1.5" onClick={() => navigateTo("add")}>
+                  <IconPlus size={16} />
+                  افزودن
+                </Button>
+              </div>
             </div>
           </div>
           <div className="locked-view-list">
-            {summary.holdings.map((holding) => (
+            {filteredAssetHoldings.map((holding) => (
               <div
                 key={holding.asset.id}
                 ref={(node) => {
@@ -1498,6 +1594,7 @@ export default function Home() {
               </div>
             ))}
             {summary.holdings.length === 0 && <Card className="text-sm text-[var(--muted-foreground)]">از تب افزودن، اولین خرید یا موجودی فعلی را ثبت کنید.</Card>}
+            {summary.holdings.length > 0 && filteredAssetHoldings.length === 0 && <Card className="text-sm text-[var(--muted-foreground)]">دارایی‌ای با این فیلتر پیدا نشد.</Card>}
           </div>
         </div>
       )}
@@ -2302,6 +2399,166 @@ function InstallGuideContent({
   );
 }
 
+function BottomSheet({
+  children,
+  onOpenChange,
+  open,
+  title,
+}: {
+  children: React.ReactNode;
+  onOpenChange: (open: boolean) => void;
+  open: boolean;
+  title: string;
+}) {
+  const [dragY, setDragY] = useState(0);
+  const [dragging, setDragging] = useState(false);
+  const startYRef = useRef(0);
+
+  if (!open) return null;
+
+  function closeSheet() {
+    setDragY(0);
+    setDragging(false);
+    onOpenChange(false);
+  }
+
+  function handlePointerDown(event: React.PointerEvent<HTMLButtonElement>) {
+    startYRef.current = event.clientY - dragY;
+    setDragging(true);
+    event.currentTarget.setPointerCapture(event.pointerId);
+  }
+
+  function handlePointerMove(event: React.PointerEvent<HTMLButtonElement>) {
+    if (!dragging) return;
+    setDragY(Math.max(0, event.clientY - startYRef.current));
+  }
+
+  function handlePointerUp(event: React.PointerEvent<HTMLButtonElement>) {
+    if (!dragging) return;
+    event.currentTarget.releasePointerCapture(event.pointerId);
+    setDragging(false);
+    if (dragY > 110) {
+      closeSheet();
+      return;
+    }
+    setDragY(0);
+  }
+
+  return (
+    <div className="sheet-root fixed inset-0 z-50">
+      <button aria-label="بستن گزینه‌ها" className="sheet-overlay absolute inset-0" onClick={closeSheet} type="button" />
+      <section
+        aria-modal="true"
+        className="bottom-sheet absolute inset-x-0 bottom-0 mx-auto max-w-3xl rounded-t-2xl border border-[var(--border)] bg-[var(--surface)] shadow-2xl"
+        role="dialog"
+        style={{
+          transform: `translateY(${dragY}px)`,
+          transition: dragging ? "none" : "transform 180ms cubic-bezier(0.16, 1, 0.3, 1)",
+        }}
+      >
+        <button
+          aria-label="کشیدن برای بستن"
+          className="sheet-handle-zone flex w-full touch-none justify-center px-4 py-3"
+          onPointerDown={handlePointerDown}
+          onPointerMove={handlePointerMove}
+          onPointerUp={handlePointerUp}
+          onPointerCancel={handlePointerUp}
+          type="button"
+        >
+          <span className="sheet-handle h-1.5 w-12 rounded-full bg-[var(--border)]" />
+        </button>
+        <div className="grid max-h-[70dvh] gap-5 overflow-y-auto px-4 pb-[calc(1rem+env(safe-area-inset-bottom))]">
+          <div className="flex items-center justify-between gap-3">
+            <h2 className="text-base font-black">{title}</h2>
+            <button
+              aria-label="بستن"
+              className="grid h-9 w-9 shrink-0 place-items-center rounded-lg border border-[var(--border)] bg-[var(--background)] text-[var(--muted-foreground)]"
+              onClick={closeSheet}
+              type="button"
+            >
+              <IconX size={16} />
+            </button>
+          </div>
+          {children}
+        </div>
+      </section>
+    </div>
+  );
+}
+
+function AssetControlsSheet({
+  assetTypeCounts,
+  filterBy,
+  onFilterChange,
+  onOpenChange,
+  onSortChange,
+  open,
+  sortBy,
+}: {
+  assetTypeCounts: Map<AssetCategory, number>;
+  filterBy: AssetTypeFilter;
+  onFilterChange: (filter: AssetTypeFilter) => void;
+  onOpenChange: (open: boolean) => void;
+  onSortChange: (sort: AssetSortOption) => void;
+  open: boolean;
+  sortBy: AssetSortOption;
+}) {
+  return (
+    <BottomSheet onOpenChange={onOpenChange} open={open} title="مرتب‌سازی و فیلتر">
+      <section className="grid gap-3">
+        <h3 className="text-sm font-extrabold">مرتب‌سازی</h3>
+        <div className="grid gap-2">
+          {assetSortOptions.map((option) => (
+            <button
+              key={option.value}
+              className={cn(
+                "flex min-h-11 items-center justify-between gap-3 rounded-lg border px-3 py-2 text-start text-sm font-bold",
+                sortBy === option.value
+                  ? "border-[var(--primary)] bg-[var(--primary-soft)] text-[var(--primary)]"
+                  : "border-[var(--border)] bg-[var(--background)] text-[var(--foreground)]",
+              )}
+              onClick={() => onSortChange(option.value)}
+              type="button"
+            >
+              <span>{option.label}</span>
+              {sortBy === option.value && <IconCheck size={16} />}
+            </button>
+          ))}
+        </div>
+      </section>
+
+      <section className="grid gap-3">
+        <h3 className="text-sm font-extrabold">نوع دارایی</h3>
+        <div className="grid grid-cols-2 gap-2">
+          <button
+            className={cn(
+              "min-h-11 rounded-lg border px-3 py-2 text-sm font-bold",
+              filterBy === "all" ? "border-[var(--primary)] bg-[var(--primary-soft)] text-[var(--primary)]" : "border-[var(--border)] bg-[var(--background)]",
+            )}
+            onClick={() => onFilterChange("all")}
+            type="button"
+          >
+            همه · {formatNumber([...assetTypeCounts.values()].reduce((sum, count) => sum + count, 0), 0)}
+          </button>
+          {(Object.keys(categoryLabels) as AssetCategory[]).map((category) => (
+            <button
+              key={category}
+              className={cn(
+                "min-h-11 rounded-lg border px-3 py-2 text-sm font-bold",
+                filterBy === category ? "border-[var(--primary)] bg-[var(--primary-soft)] text-[var(--primary)]" : "border-[var(--border)] bg-[var(--background)]",
+              )}
+              onClick={() => onFilterChange(category)}
+              type="button"
+            >
+              {categoryLabels[category]} · {formatNumber(assetTypeCounts.get(category) ?? 0, 0)}
+            </button>
+          ))}
+        </div>
+      </section>
+    </BottomSheet>
+  );
+}
+
 function HoldingCard({
   holding,
   expanded,
@@ -2347,7 +2604,7 @@ function HoldingCard({
 
   return (
     <Card>
-      <div className="flex min-w-0 flex-col gap-3 min-[430px]:flex-row min-[430px]:items-start min-[430px]:justify-between">
+      <div className="flex min-w-0 items-start justify-between gap-3">
         <div className="flex min-w-0 items-start gap-3">
           <div className="grid h-11 w-11 shrink-0 place-items-center rounded-lg bg-[var(--primary-soft)] text-[var(--primary)]">
             <Icon size={21} />
@@ -2358,6 +2615,24 @@ function HoldingCard({
               {categoryLabels[holding.asset.category]} · {formatNumber(holding.quantity)} {holding.asset.unit}
             </p>
           </div>
+        </div>
+        <div className="flex shrink-0 items-center gap-1">
+          <button
+            aria-label={`ویرایش ${holding.asset.name}`}
+            className="grid h-9 w-9 place-items-center rounded-lg border border-[var(--border)] bg-[var(--background)] text-[var(--muted-foreground)]"
+            onClick={() => onEdit(holding.asset.id)}
+            type="button"
+          >
+            <IconEdit size={16} />
+          </button>
+          <button
+            aria-label={`حذف ${holding.asset.name}`}
+            className="grid h-9 w-9 place-items-center rounded-lg border border-red-200 bg-red-50 text-red-700"
+            onClick={() => onRemove(holding.asset.id)}
+            type="button"
+          >
+            <IconTrash size={16} />
+          </button>
         </div>
       </div>
       <div className="mt-4 grid grid-cols-1 gap-3 text-sm">
@@ -2388,17 +2663,6 @@ function HoldingCard({
           <MiniProfitChart points={history} />
         </button>
       )}
-      <div className="mt-4 border-t border-[var(--border)] pt-3">
-        <div className="grid grid-cols-2 gap-2 min-[430px]:flex min-[430px]:justify-end">
-          <Button variant="secondary" className="min-h-9 px-3" onClick={() => onEdit(holding.asset.id)}>
-            <IconEdit size={16} />
-            ویرایش
-          </Button>
-          <Button variant="ghost" className="min-h-9 px-3 text-red-700" onClick={() => onRemove(holding.asset.id)}>
-            حذف
-          </Button>
-        </div>
-      </div>
     </Card>
   );
 }
