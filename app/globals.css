@@ -256,15 +256,25 @@ svg {
 
 .bottom-sheet {
   animation: bottom-sheet-in 210ms cubic-bezier(0.16, 1, 0.3, 1) both;
+  overscroll-behavior: contain;
   will-change: transform;
 }
 
 .sheet-handle-zone {
   cursor: grab;
+  touch-action: none;
+  -webkit-user-select: none;
+  user-select: none;
 }
 
 .sheet-handle-zone:active {
   cursor: grabbing;
+}
+
+.sheet-scroll {
+  overscroll-behavior: contain;
+  -webkit-overflow-scrolling: touch;
+  touch-action: pan-y;
 }
 
 .edit-dialog {

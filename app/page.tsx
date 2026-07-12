@@ -7,7 +7,7 @@ import * as Toast from "@radix-ui/react-toast";
 import type React from "react";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { twMerge } from "tailwind-merge";
-import { AssetHistoryChart, MiniProfitChart, type HistoryChartMode } from "./components/charts";
+import { AssetHistoryChart, type HistoryChartMode } from "./components/charts";
 import {
   addLocalDays,
   dateFromLocalKey,
@@ -147,6 +147,7 @@ type IconName =
   | "settings"
   | "share"
   | "sliders"
+  | "sort"
   | "smartphone"
   | "trash"
   | "upload"
@@ -271,6 +272,15 @@ function Icon({ className, name, size = 18 }: IconProps) {
         <circle {...common} cx="8" cy="17" r="2" />
       </>
     ),
+    sort: (
+      <>
+        <path {...common} d="M4 7h10" />
+        <path {...common} d="M4 13h7" />
+        <path {...common} d="M4 19h4" />
+        <path {...common} d="M17 5v14" />
+        <path {...common} d="m13 15 4 4 4-4" />
+      </>
+    ),
     smartphone: (
       <>
         <rect {...common} x="7" y="2" width="10" height="20" rx="2" />
@@ -340,7 +350,7 @@ const IconPlus = makeIcon("plus");
 const IconRefresh = makeIcon("refresh");
 const IconSettings = makeIcon("settings");
 const IconShare = makeIcon("share");
-const IconSliders = makeIcon("sliders");
+const IconSort = makeIcon("sort");
 const IconSmartphone = makeIcon("smartphone");
 const IconTrash = makeIcon("trash");
 const IconUpload = makeIcon("upload");
@@ -899,6 +909,7 @@ export default function Home() {
     .find((transaction) => transaction.type === "buy");
   const selectedAssetSortLabel = assetSortOptions.find((option) => option.value === assetSortBy)?.label ?? "سود: بیشترین به کمترین";
   const selectedAssetTypeLabel = assetTypeFilter === "all" ? "همه نوع‌ها" : categoryLabels[assetTypeFilter];
+  const ActiveAssetTypeIcon = assetTypeFilter === "all" ? IconWallet : categoryIcons[assetTypeFilter];
   const navItems: Array<{ id: Exclude<View, "assetHistory">; label: string; icon: ReturnType<typeof makeIcon> }> = [
     { id: "dashboard", label: "داشبورد", icon: IconHome },
     { id: "assets", label: "دارایی‌ها", icon: IconBarChart },
@@ -1555,21 +1566,35 @@ export default function Home() {
       {activeView === "assets" && (
         <div className="locked-view">
           <div className="locked-view-fixed">
-            <div className="flex flex-wrap items-end justify-between gap-3">
-              <PageTitle
-                title="دارایی‌ها"
-                subtitle={`${formatNumber(filteredAssetHoldings.length, 0)} از ${formatNumber(summary.holdings.length, 0)} مورد · ${selectedAssetSortLabel} · ${selectedAssetTypeLabel}`}
-              />
-              <div className="flex shrink-0 items-center gap-2">
-                <Button className="min-h-9 px-3 py-1.5" onClick={() => setAssetSheetOpen(true)} variant="secondary">
-                  <IconSliders size={16} />
-                  گزینه‌ها
-                </Button>
-                <Button className="min-h-9 px-3 py-1.5" onClick={() => navigateTo("add")}>
-                  <IconPlus size={16} />
-                  افزودن
-                </Button>
+            <div className="flex items-center justify-between gap-3">
+              <div className="min-w-0">
+                <div className="flex min-w-0 items-baseline gap-2">
+                  <h1 className="truncate text-2xl font-black tracking-normal">دارایی‌ها</h1>
+                  <span className="shrink-0 text-sm font-bold text-[var(--muted-foreground)]">{formatNumber(filteredAssetHoldings.length, 0)} مورد</span>
+                </div>
               </div>
+              <Button className="min-h-9 shrink-0 px-3 py-1.5" onClick={() => navigateTo("add")}>
+                <IconPlus size={16} />
+                افزودن دارایی
+              </Button>
+            </div>
+            <div className="mt-3 grid grid-cols-2 gap-2">
+              <button
+                className="flex min-h-10 min-w-0 items-center gap-2 rounded-lg px-2.5 py-2 text-start text-sm font-extrabold text-[var(--foreground)] active:bg-[var(--muted)]"
+                onClick={() => setAssetSheetOpen(true)}
+                type="button"
+              >
+                <IconSort className="shrink-0 text-[var(--primary)]" size={16} />
+                <span className="truncate">{selectedAssetSortLabel}</span>
+              </button>
+              <button
+                className="flex min-h-10 min-w-0 items-center gap-2 rounded-lg px-2.5 py-2 text-start text-sm font-extrabold text-[var(--foreground)] active:bg-[var(--muted)]"
+                onClick={() => setAssetSheetOpen(true)}
+                type="button"
+              >
+                <ActiveAssetTypeIcon className="shrink-0 text-[var(--primary)]" size={16} />
+                <span className="truncate">{selectedAssetTypeLabel}</span>
+              </button>
             </div>
           </div>
           <div className="locked-view-list">
@@ -2413,34 +2438,44 @@ function BottomSheet({
   const [dragY, setDragY] = useState(0);
   const [dragging, setDragging] = useState(false);
   const startYRef = useRef(0);
+  const dragYRef = useRef(0);
 
   if (!open) return null;
 
   function closeSheet() {
+    dragYRef.current = 0;
     setDragY(0);
     setDragging(false);
     onOpenChange(false);
   }
 
   function handlePointerDown(event: React.PointerEvent<HTMLButtonElement>) {
-    startYRef.current = event.clientY - dragY;
+    event.preventDefault();
+    startYRef.current = event.clientY - dragYRef.current;
     setDragging(true);
     event.currentTarget.setPointerCapture(event.pointerId);
   }
 
   function handlePointerMove(event: React.PointerEvent<HTMLButtonElement>) {
     if (!dragging) return;
-    setDragY(Math.max(0, event.clientY - startYRef.current));
+    event.preventDefault();
+    const nextDragY = Math.max(0, event.clientY - startYRef.current);
+    dragYRef.current = nextDragY;
+    setDragY(nextDragY);
   }
 
   function handlePointerUp(event: React.PointerEvent<HTMLButtonElement>) {
     if (!dragging) return;
-    event.currentTarget.releasePointerCapture(event.pointerId);
+    event.preventDefault();
+    if (event.currentTarget.hasPointerCapture(event.pointerId)) {
+      event.currentTarget.releasePointerCapture(event.pointerId);
+    }
     setDragging(false);
-    if (dragY > 110) {
+    if (dragYRef.current > 110) {
       closeSheet();
       return;
     }
+    dragYRef.current = 0;
     setDragY(0);
   }
 
@@ -2467,7 +2502,7 @@ function BottomSheet({
         >
           <span className="sheet-handle h-1.5 w-12 rounded-full bg-[var(--border)]" />
         </button>
-        <div className="grid max-h-[70dvh] gap-5 overflow-y-auto px-4 pb-[calc(1rem+env(safe-area-inset-bottom))]">
+        <div className="sheet-scroll grid max-h-[70dvh] gap-5 overflow-y-auto px-4 pb-[calc(1rem+env(safe-area-inset-bottom))]">
           <div className="flex items-center justify-between gap-3">
             <h2 className="text-base font-black">{title}</h2>
             <button
@@ -2627,7 +2662,7 @@ function HoldingCard({
           </button>
           <button
             aria-label={`حذف ${holding.asset.name}`}
-            className="grid h-9 w-9 place-items-center rounded-lg border border-red-200 bg-red-50 text-red-700"
+            className="grid h-9 w-9 place-items-center rounded-lg text-red-700 transition active:scale-95"
             onClick={() => onRemove(holding.asset.id)}
             type="button"
           >
@@ -2649,18 +2684,12 @@ function HoldingCard({
       {history && (
         <button
           aria-label={`نمایش تاریخچه ${holding.asset.name}`}
-          className="mt-4 block w-full rounded-lg border border-[var(--border)] bg-[var(--background)] px-2 py-2 text-start"
+          className="mt-4 flex w-full items-center justify-between gap-3 border-t border-[var(--border)] pt-3 text-start text-sm font-extrabold text-[var(--primary)]"
           onClick={() => onOpenHistory?.(holding.asset.id)}
           type="button"
         >
-          <div className="mb-1 flex items-center justify-between gap-3 px-1">
-            <span className="text-xs font-bold text-[var(--muted-foreground)]">۳۰ روز اخیر</span>
-            <span className="inline-flex items-center gap-1 text-xs font-extrabold text-[var(--primary)]">
-              جزئیات
-              <IconChevronLeft size={13} />
-            </span>
-          </div>
-          <MiniProfitChart points={history} />
+          <span>نمایش جزئیات</span>
+          <IconChevronLeft className="shrink-0" size={16} />
         </button>
       )}
     </Card>
