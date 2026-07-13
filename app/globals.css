@@ -163,6 +163,12 @@ svg {
   overflow-wrap: anywhere;
 }
 
+.app-shell.is-locked {
+  height: calc(100dvh - var(--native-statusbar-top));
+  min-height: 0;
+  overflow: hidden;
+}
+
 .app-content {
   width: 100%;
   max-width: 48rem;

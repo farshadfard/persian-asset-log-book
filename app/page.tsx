@@ -1049,8 +1049,14 @@ export default function Home() {
   useEffect(() => {
     if (activeView !== "assets" || !pendingAssetScrollId) return undefined;
     const frameId = window.requestAnimationFrame(() => {
-      assetCardRefs.current[pendingAssetScrollId]?.scrollIntoView({ behavior: "smooth", block: "start" });
-      assetCardRefs.current[pendingAssetScrollId]?.focus({ preventScroll: true });
+      const target = assetCardRefs.current[pendingAssetScrollId];
+      const scrollContainer = target?.closest(".locked-view-list");
+      if (target instanceof HTMLElement && scrollContainer instanceof HTMLElement) {
+        const targetTop = target.getBoundingClientRect().top - scrollContainer.getBoundingClientRect().top + scrollContainer.scrollTop;
+        scrollContainer.scrollTo({ behavior: "smooth", top: Math.max(0, targetTop - 8) });
+        target.focus({ preventScroll: true });
+      }
+      window.scrollTo({ left: 0, top: 0 });
       setPendingAssetScrollId("");
     });
     return () => window.cancelAnimationFrame(frameId);
@@ -1910,9 +1916,11 @@ export default function Home() {
     </>
   );
 
+  const isLockedView = activeView === "dashboard" || activeView === "assets" || activeView === "add" || activeView === "prices";
+
   return (
     <Toast.Provider swipeDirection="right">
-      <main className={cn("min-h-screen bg-[var(--background)] text-[var(--foreground)]", activeView === "assetHistory" ? "pb-6" : "pb-[calc(7rem+env(safe-area-inset-bottom))]")}>
+      <main className={cn("app-shell min-h-screen bg-[var(--background)] text-[var(--foreground)]", activeView === "assetHistory" ? "pb-6" : isLockedView ? "is-locked" : "pb-[calc(7rem+env(safe-area-inset-bottom))]")}>
         {activeView !== "assetHistory" && <header className="sticky top-0 z-20 border-b border-[var(--border)] bg-[var(--background)]/92 backdrop-blur">
           <div className="mx-auto flex max-w-3xl items-center justify-between px-4 py-3">
             <div>
@@ -2079,7 +2087,7 @@ export default function Home() {
           </Dialog.Portal>
         </Dialog.Root>
 
-        <div className={cn("app-content", (activeView === "dashboard" || activeView === "assets" || activeView === "add" || activeView === "prices") && "is-locked")}>{mainContent}</div>
+        <div className={cn("app-content", isLockedView && "is-locked")}>{mainContent}</div>
 
         <Dialog.Root open={Boolean(pendingBackup)} onOpenChange={(open) => !open && setPendingBackup(null)}>
           <Dialog.Portal>
