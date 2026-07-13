@@ -187,14 +187,14 @@ svg {
   min-height: 0;
   height: 100%;
   flex-direction: column;
-  gap: 0.625rem;
+  gap: 1rem;
   overflow: visible;
 }
 
 .locked-view-fixed {
   display: grid;
   flex: 0 0 auto;
-  gap: 0.75rem;
+  gap: 1rem;
   padding-top: 1rem;
 }
 
@@ -203,7 +203,7 @@ svg {
   min-height: 0;
   flex: 1 1 auto;
   align-content: start;
-  gap: 0.75rem;
+  gap: 1rem;
   overflow-y: auto;
   padding-bottom: calc(6.25rem + env(safe-area-inset-bottom));
   overscroll-behavior: contain;
@@ -213,7 +213,7 @@ svg {
 
 .asset-filter-trigger {
   color: var(--muted-foreground);
-  font-size: 0.625rem;
+  font-size: 0.6875rem;
   line-height: 1.2;
 }
 
@@ -263,9 +263,12 @@ svg {
 }
 
 .bottom-sheet {
-  animation: bottom-sheet-fade-in 160ms ease-out both;
   overscroll-behavior: contain;
   will-change: transform;
+}
+
+.bottom-sheet[data-state="open"] {
+  animation: bottom-sheet-in 190ms cubic-bezier(0.16, 1, 0.3, 1);
 }
 
 .sheet-handle-zone {
@@ -444,12 +447,14 @@ svg {
   }
 }
 
-@keyframes bottom-sheet-fade-in {
+@keyframes bottom-sheet-in {
   from {
     opacity: 0;
+    transform: translate3d(0, 3.5rem, 0);
   }
   to {
     opacity: 1;
+    transform: translate3d(0, 0, 0);
   }
 }
 

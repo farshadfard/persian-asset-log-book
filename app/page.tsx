@@ -2435,25 +2435,44 @@ function BottomSheet({
 }) {
   const [dragY, setDragY] = useState(0);
   const [dragging, setDragging] = useState(false);
+  const [closing, setClosing] = useState(false);
   const startYRef = useRef(0);
   const dragYRef = useRef(0);
   const draggingRef = useRef(false);
   const activePointerIdRef = useRef<number | null>(null);
   const cleanupDragRef = useRef<() => void>(() => undefined);
+  const closeTimerRef = useRef<number | null>(null);
+
+  useEffect(() => {
+    return () => {
+      cleanupDragRef.current();
+      if (closeTimerRef.current !== null) window.clearTimeout(closeTimerRef.current);
+    };
+  }, []);
 
   if (!open) return null;
 
   function closeSheet() {
+    if (closing) return;
     cleanupDragRef.current();
-    dragYRef.current = 0;
     draggingRef.current = false;
     activePointerIdRef.current = null;
-    setDragY(0);
     setDragging(false);
-    onOpenChange(false);
+    setClosing(true);
+    const closeTarget = typeof window === "undefined" ? 700 : window.innerHeight;
+    dragYRef.current = closeTarget;
+    setDragY(closeTarget);
+    closeTimerRef.current = window.setTimeout(() => {
+      onOpenChange(false);
+      dragYRef.current = 0;
+      setDragY(0);
+      setClosing(false);
+      closeTimerRef.current = null;
+    }, 190);
   }
 
   function handlePointerDown(event: React.PointerEvent<HTMLButtonElement>) {
+    if (closing) return;
     event.preventDefault();
     cleanupDragRef.current();
     activePointerIdRef.current = event.pointerId;
@@ -2504,8 +2523,9 @@ function BottomSheet({
         role="dialog"
         style={{
           transform: `translateY(${dragY}px)`,
-          transition: dragging ? "none" : "transform 180ms cubic-bezier(0.16, 1, 0.3, 1)",
+          transition: dragging ? "none" : "transform 190ms cubic-bezier(0.16, 1, 0.3, 1)",
         }}
+        data-state={closing ? "closed" : "open"}
       >
         <button
           aria-label="کشیدن برای بستن"
